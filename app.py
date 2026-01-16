@@ -19,12 +19,12 @@ KEY_FILE = 'secrets.json'
 SHEET_NAME = 'tournament_db'
 ADMIN_PASSWORD = "1234"
 
-# デフォルトの大会設定
+# デフォルトの大会設定 (新人戦は男女別に階級を持たせる)
 DEFAULT_TOURNAMENTS = {
     "kantou": {
         "name": "関東高等学校空手道大会 埼玉県予選",
         "template": "template_kantou.xlsx",
-        "type": "standard", # standard: 団体は1種類
+        "type": "standard", 
         "grades": [1, 2, 3],
         "active": True
     },
@@ -38,15 +38,16 @@ DEFAULT_TOURNAMENTS = {
     "shinjin": {
         "name": "新人大会",
         "template": "template_shinjin.xlsx",
-        "type": "shinjin", # shinjin: 団体組手が5人/3人選択制
+        "type": "shinjin",
         "grades": [1, 2],
-        "weights": "-55,-61,-68,-76,+76",
+        "weights_m": "-55,-61,-68,-76,+76", # 男子デフォルト
+        "weights_w": "-48,-53,-59,-66,+66", # 女子デフォルト
         "active": False
     },
     "senbatsu": {
         "name": "全国選抜 埼玉県予選",
         "template": "template_senbatsu.xlsx",
-        "type": "division", # division: 選抜/1年/高入生 (形なし)
+        "type": "division", 
         "grades": [1, 2],
         "active": False
     }
@@ -55,12 +56,12 @@ DEFAULT_TOURNAMENTS = {
 # デフォルトの人数制限設定
 DEFAULT_LIMITS = {
     "team_kata": {"min": 3, "max": 3},
-    "team_kumite_5": {"min": 3, "max": 5}, # 5人制
-    "team_kumite_3": {"min": 2, "max": 3}, # 3人制
-    "ind_kata_reg": {"max": 4}, # 個人形(正)
-    "ind_kata_sub": {"max": 2}, # 個人形(補)
-    "ind_kumi_reg": {"max": 4}, # 個人組手(正)
-    "ind_kumi_sub": {"max": 2}  # 個人組手(補)
+    "team_kumite_5": {"min": 3, "max": 5},
+    "team_kumite_3": {"min": 2, "max": 3},
+    "ind_kata_reg": {"max": 4},
+    "ind_kata_sub": {"max": 2},
+    "ind_kumi_reg": {"max": 4},
+    "ind_kumi_sub": {"max": 2}
 }
 
 # Excel座標設定
@@ -179,11 +180,10 @@ def save_schools(d): save_json("schools", d)
 # Config読み込み (Year, Limitsを含む)
 def load_conf():
     default_conf = {
-        "year": "6", # デフォルト年度
+        "year": "6", 
         "tournaments": DEFAULT_TOURNAMENTS,
         "limits": DEFAULT_LIMITS
     }
-    # 既存のConfigに足りないキーがあればデフォルトで埋める
     data = load_json("config", default_conf)
     if "limits" not in data: data["limits"] = DEFAULT_LIMITS
     if "tournaments" not in data: data["tournaments"] = DEFAULT_TOURNAMENTS
@@ -229,7 +229,6 @@ def get_merged_data(school_name, tournament_id):
 # 人数制限チェック
 def validate_counts(members_df, entries_data, limits, t_type, school_meta):
     errs = []
-    
     for sex in ["男子", "女子"]:
         sex_df = members_df[members_df['sex'] == sex]
         cnt_tk = 0; cnt_tku = 0
@@ -259,9 +258,7 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta):
         # 2. 団体組手
         if cnt_tku > 0:
             mode = "5"
-            # 新人戦の場合のみモード判定
             if t_type == "shinjin":
-                # metaキーは _meta_学校名 だが、ここでは引数で渡された school_meta を使う
                 mode_key = "m_kumite_mode" if sex == "男子" else "w_kumite_mode"
                 mode = school_meta.get(mode_key, "none")
             
@@ -374,9 +371,7 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
             else: txt = "○"
             safe_write(ws, (r, ku_col), txt, True)
     
-    # 【エラー対策】A1選択コードは削除しました。
-    # 代わりにテンプレートファイル自体を「A1を選択して保存」したものを使用してください。
-
+    # テンプレート側でのA1保存を前提として、コードでの強制変更は削除
     fname = f"申込書_{school_name}.xlsx"
     wb.save(fname)
     return fname, "作成成功"
@@ -385,7 +380,6 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
 # 6. UI: 学校ページ
 # ---------------------------------------------------------
 def school_page(s_name):
-    # ヘッダー
     col_h1, col_h2 = st.columns([3, 1])
     with col_h1: st.markdown(f"### 🏫 {s_name} 様")
     with col_h2:
@@ -549,10 +543,13 @@ def school_page(s_name):
                 if t_conf["type"] == "standard":
                     opts = ["一般","シード","補欠"]
                     def_val = r.get("last_kumi_val", "一般")
-                    ku_val = c[4].selectbox("区分", opts, opts.index(def_val) if def_val in opts else 0, key=f"kv_{uid}", label_visibility="collapsed")
+                    # ★修正箇所: ID重複回避のため key を kuv_ に変更
+                    ku_val = c[4].selectbox("区分", opts, opts.index(def_val) if def_val in opts else 0, key=f"kuv_{uid}", label_visibility="collapsed")
                     if ku_val != "補欠": ku_rank = c[4].text_input("順位", r.get("last_kumi_rank",""), key=f"kur_{uid}", placeholder="数字", label_visibility="collapsed")
                 elif t_conf["type"] == "weight":
-                    w_str = t_conf.get("weights", "-55,-61,-68,-76,+76")
+                    # 性別ごとの階級設定を取得
+                    w_key = "weights_m" if r['sex'] == "男子" else "weights_w"
+                    w_str = t_conf.get(w_key, "-55,-61,-68,-76,+76")
                     w_list = [f"{w.strip()}kg級" for w in w_str.split(",")] + ["補欠"]
                     def_val = r.get("last_kumi_val", w_list[0])
                     if def_val not in w_list and def_val != "補欠": def_val = f"{def_val}kg級"
@@ -563,7 +560,6 @@ def school_page(s_name):
                     def_val = r.get("last_kumi_val", "選抜の部")
                     ku_val = c[4].selectbox("出場区分", d_list, d_list.index(def_val) if def_val in d_list else 0, key=f"kuv_{uid}", label_visibility="collapsed")
 
-            # 代入方式 (KeyError回避)
             entries_update[uid] = {"team_kata_chk":tk, "team_kata_role":tkr, "team_kumi_chk":tku, "team_kumi_role":tkur, "kata_chk":k_chk, "kata_val":k_val, "kata_rank":k_rank, "kumi_chk":ku_chk, "kumi_val":ku_val, "kumi_rank":ku_rank}
 
         if not men.empty:
@@ -642,12 +638,14 @@ def admin_page():
             if st.button("人数制限を保存"):
                 conf["limits"] = lm; save_conf(conf); st.success("保存しました")
 
-        st.caption("新人戦 階級設定")
+        st.caption("新人戦 階級設定 (男女別)")
         t_data = conf["tournaments"]["shinjin"]
         with st.form("edit_t"):
-            w_in = st.text_area("階級リスト", t_data.get("weights", ""))
+            wm_in = st.text_area("男子階級リスト", t_data.get("weights_m", ""))
+            ww_in = st.text_area("女子階級リスト", t_data.get("weights_w", ""))
             if st.form_submit_button("階級を保存"):
-                conf["tournaments"]["shinjin"]["weights"] = w_in
+                conf["tournaments"]["shinjin"]["weights_m"] = wm_in
+                conf["tournaments"]["shinjin"]["weights_w"] = ww_in
                 save_conf(conf); st.success("保存しました")
 
     with t2:
