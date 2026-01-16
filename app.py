@@ -188,7 +188,6 @@ def save_conf(d): save_json("config", d)
 # 4. ロジック (バックアップ・復元・更新)
 # ---------------------------------------------------------
 def create_backup():
-    """現在の名簿と設定をバックアップシートに保存"""
     df = load_members_master()
     ws_bk_mem = get_worksheet_safe("members_backup")
     ws_bk_mem.clear()
@@ -201,7 +200,6 @@ def create_backup():
     ws_bk_conf.update_acell('A1', json.dumps(conf, ensure_ascii=False))
 
 def restore_from_backup():
-    """バックアップシートから名簿と設定を復元"""
     try:
         ws_bk_mem = get_worksheet_safe("members_backup")
         recs = ws_bk_mem.get_all_records()
@@ -221,7 +219,7 @@ def restore_from_backup():
     except:
         return "設定の復元に失敗しました"
     
-    return "✅ バックアップから復元しました（学年も元に戻りました）"
+    return "✅ バックアップから復元しました"
 
 def perform_year_rollover():
     create_backup()
@@ -245,7 +243,6 @@ def get_merged_data(school_name, tournament_id):
     if master.empty: return pd.DataFrame()
     my_members = master[master['school'] == school_name].copy()
     
-    # 最新エントリー取得
     if f"entry_cache_{tournament_id}" in st.session_state:
         entries = st.session_state[f"entry_cache_{tournament_id}"]
     else:
@@ -350,6 +347,7 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
         safe_write(ws, c["d2"], "○" if a.get("d2") else "×", True)
     
     cols = coords["cols"]
+    # Excel出力時は確実に最新データをマージしたものを使用
     entries = members_df[
         (members_df['last_team_kata_chk']==True) | (members_df['last_team_kumi_chk']==True) |
         (members_df['last_kata_chk']==True) | (members_df['last_kumi_chk']==True)
@@ -498,7 +496,7 @@ def school_page(s_name):
         st.markdown(f"**出場対象学年:** {target_grades} 年生")
         merged = get_merged_data(s_name, active_tid)
         
-        # NameError防止: ここで全メンバーを確保
+        # NameError防止: ここで全対象者を確保
         all_valid_members = merged[merged['grade'].isin(target_grades)].sort_values(by="grade").copy()
         
         if all_valid_members.empty: st.warning("部員名簿が空です。"); return
@@ -525,10 +523,7 @@ def school_page(s_name):
 
         for g_idx, sex in enumerate(["男子", "女子"]):
             with gender_tabs[g_idx]:
-                # フォーム内でのデータ収集用
-                form_update_buffer = {}
-                
-                # 表示対象のみ抽出
+                form_buffer = {}
                 current_sex_members = all_valid_members[all_valid_members['sex']==sex]
                 
                 if current_sex_members.empty:
@@ -599,7 +594,7 @@ def school_page(s_name):
                             ku_val = c4a.selectbox("階級", w_list, index=idx, key=f"sel_ku_{uid}", label_visibility="collapsed")
                             ku_rank = c4b.text_input("順位", r.get("last_kumi_rank",""), key=f"rk_ku_{uid}", label_visibility="collapsed", placeholder="順位")
 
-                            form_update_buffer[uid] = {
+                            form_buffer[uid] = {
                                 "val_tk": val_tk, "val_tku": val_tku, 
                                 "val_k": val_k, "rank_k": rank_k,
                                 "ku_val": ku_val, "rank_ku": rank_ku,
@@ -608,8 +603,7 @@ def school_page(s_name):
                         if st.form_submit_button(f"✅ {sex}エントリーを保存"):
                             has_error = False
                             processed = {}
-                            # KeyError防止: バッファにある分だけ処理する
-                            for uid, raw in form_update_buffer.items():
+                            for uid, raw in form_buffer.items():
                                 name = uid.split('_')[1]
                                 tk_chk = (raw["val_tk"] != "なし")
                                 tk_role = "正選手" if raw["val_tk"] == "正" else ("補欠" if raw["val_tk"] == "補" else "")
@@ -648,13 +642,13 @@ def school_page(s_name):
                                 time.sleep(1); st.rerun()
 
         st.markdown("---")
+        # NameError回避: all_valid_members を使用
         if st.button("📥 Excel作成画面へ進む (人数チェック)", type="primary"):
              latest_entries = load_entries(active_tid)
-             # NameError修正: all_valid_membersを使用
              errs = validate_counts(all_valid_members, latest_entries, conf["limits"], t_conf["type"], {"m_kumite_mode":m_mode, "w_kumite_mode":w_mode})
              if errs:
                 for e in errs: st.error(e)
-                st.error("人数制限エラーがあります。")
+                st.error("人数制限エラーがあります。修正して保存してください。")
              else:
                 st.success("エントリー内容に問題はありません。")
                 final_merged = get_merged_data(s_name, active_tid)
