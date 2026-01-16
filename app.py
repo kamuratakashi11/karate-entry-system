@@ -230,14 +230,9 @@ def get_merged_data(school_name, tournament_id):
 def validate_counts(members_df, entries_data, limits, t_type, school_meta):
     errs = []
     
-    # 性別ごとに集計
     for sex in ["男子", "女子"]:
-        # その性別の部員のみ抽出
         sex_df = members_df[members_df['sex'] == sex]
-        
-        # カウント変数
-        cnt_tk = 0 # 団体形(正選手) ※補欠は含まない
-        cnt_tku = 0 # 団体組手
+        cnt_tk = 0; cnt_tku = 0
         cnt_ind_k_reg = 0; cnt_ind_k_sub = 0
         cnt_ind_ku_reg = 0; cnt_ind_ku_sub = 0
         
@@ -245,35 +240,30 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta):
             uid = f"{r['school']}_{r['name']}"
             ent = entries_data.get(uid, {})
             
-            # 団体形 (正選手のみカウント)
             if ent.get("team_kata_chk") and ent.get("team_kata_role") == "正選手": cnt_tk += 1
-            # 団体組手 (全員カウント)
             if ent.get("team_kumi_chk"): cnt_tku += 1
             
-            # 個人形
             if ent.get("kata_chk"):
                 if ent.get("kata_val") == "補欠": cnt_ind_k_sub += 1
                 else: cnt_ind_k_reg += 1
-            # 個人組手
             if ent.get("kumi_chk"):
                 if ent.get("kumi_val") == "補欠": cnt_ind_ku_sub += 1
                 else: cnt_ind_ku_reg += 1
 
-        # --- チェック ---
-        
-        # 1. 団体形 (3人固定)
-        if cnt_tk > 0: # エントリーがある場合のみチェック
+        # 1. 団体形
+        if cnt_tk > 0:
             mn, mx = limits["team_kata"]["min"], limits["team_kata"]["max"]
             if not (mn <= cnt_tk <= mx):
                 errs.append(f"❌ {sex}団体形(正選手): 現在{cnt_tk}名 (規定: {mn}～{mx}名)")
 
-        # 2. 団体組手 (モードによって規定が変わる)
+        # 2. 団体組手
         if cnt_tku > 0:
-            # その性別の組手モードを取得 (5 or 3)
-            # shinjin以外はデフォルト5とする
             mode = "5"
+            # 新人戦の場合のみモード判定
             if t_type == "shinjin":
-                mode = school_meta.get(f"{sex}_kumite_mode", "none")
+                # metaキーは _meta_学校名 だが、ここでは引数で渡された school_meta を使う
+                mode_key = "m_kumite_mode" if sex == "男子" else "w_kumite_mode"
+                mode = school_meta.get(mode_key, "none")
             
             if mode == "5":
                 mn, mx = limits["team_kumite_5"]["min"], limits["team_kumite_5"]["max"]
@@ -307,9 +297,9 @@ def safe_write(ws, target, value, align_center=False, is_string=False):
     
     if str(value).endswith("年") and str(value)[:-1].isdigit(): value = str(value).replace("年", "")
     
-    # 0落ち対策: 明示的に文字列としてセット
+    # 0落ち対策
     if is_string:
-        cell.number_format = '@' # Text format
+        cell.number_format = '@' 
         cell.value = str(value)
     else:
         cell.value = value
@@ -325,7 +315,6 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
     except: return None, f"{template_file} が見つかりません。"
     
     conf = load_conf()
-    # 年度書き込み
     safe_write(ws, coords["year"], conf.get("year", ""))
     safe_write(ws, coords["tournament_name"], t_conf.get("name", ""))
     safe_write(ws, coords["date"], f"令和{datetime.date.today().year-2018}年{datetime.date.today().month}月{datetime.date.today().day}日")
@@ -354,7 +343,6 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
         safe_write(ws, (r, cols["name"]), row["name"])
         safe_write(ws, (r, cols["grade"]), row["grade"])
         safe_write(ws, (r, cols["dob"]), row["dob"])
-        # JKF番号を文字列として書き込み (0落ち防止)
         safe_write(ws, (r, cols["jkf_no"]), row["jkf_no"], is_string=True)
         
         sex = row["sex"]
@@ -386,11 +374,9 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
             else: txt = "○"
             safe_write(ws, (r, ku_col), txt, True)
     
-    # 【重要】保存時にA1セルを選択し、スクロールをリセットする
-    # すべてのシートビューをリセット
+    # 保存時にA1セルを強制選択
     sheet_views = ws.sheet_views
     if sheet_views:
-        # 既存のビューをA1に強制変更
         sheet_views.sheetView[0].topLeftCell = 'A1'
         sheet_views.sheetView[0].selection[0].activeCell = 'A1'
         sheet_views.sheetView[0].selection[0].sqref = 'A1'
@@ -419,7 +405,6 @@ def school_page(s_name):
     
     if not active_tid: st.error("現在受付中の大会はありません。"); return
     
-    # 年度表示
     disp_year = conf.get("year", "〇")
     st.markdown(f"## 🥋 **令和{disp_year}年度 {t_conf['name']}** <small>エントリー画面</small>", unsafe_allow_html=True)
 
@@ -507,30 +492,24 @@ def school_page(s_name):
         entries_update = load_entries(active_tid)
         
         # --- 新人戦用 団体組手タイプ選択 (排他制御) ---
-        # メタデータをEntriesの特殊キー "_meta_{school_name}" に保存する
         meta_key = f"_meta_{s_name}"
         school_meta = entries_update.get(meta_key, {"m_kumite_mode": "none", "w_kumite_mode": "none"})
-        
-        m_mode = "5" # デフォルト
-        w_mode = "5"
+        m_mode = "5"; w_mode = "5"
         
         if t_conf["type"] == "shinjin":
             st.info("団体組手は「5人制」か「3人制」のどちらかを選択してください。")
             c_m, c_w = st.columns(2)
             
-            # 男子設定
             curr_m = school_meta.get("m_kumite_mode", "none")
             idx_m = ["none", "5", "3"].index(curr_m) if curr_m in ["none", "5", "3"] else 0
             new_m = c_m.radio("男子 団体組手", ["出場しない", "5人制", "3人制"], index=idx_m, horizontal=True)
             m_mode = "none" if new_m == "出場しない" else ("5" if new_m == "5人制" else "3")
             
-            # 女子設定
             curr_w = school_meta.get("w_kumite_mode", "none")
             idx_w = ["none", "5", "3"].index(curr_w) if curr_w in ["none", "5", "3"] else 0
             new_w = c_w.radio("女子 団体組手", ["出場しない", "5人制", "3人制"], index=idx_w, horizontal=True)
             w_mode = "none" if new_w == "出場しない" else ("5" if new_w == "5人制" else "3")
             
-            # メタデータ更新
             school_meta["m_kumite_mode"] = m_mode
             school_meta["w_kumite_mode"] = w_mode
             entries_update[meta_key] = school_meta
@@ -548,7 +527,7 @@ def school_page(s_name):
             tkr = "正選手"
             if tk: tkr = c[1].radio("役", ["正選手","補欠"], 0 if r.get("last_team_kata_role")=="正選手" else 1, key=f"tkr_{uid}", horizontal=True, label_visibility="collapsed")
             
-            # 団体組手 (モードによって表示制御)
+            # 団体組手
             tku = False; tkur = "正選手"
             if team_kumi_mode != "none":
                 label = f"団体組手({team_kumi_mode}人)"
@@ -588,7 +567,9 @@ def school_page(s_name):
                     def_val = r.get("last_kumi_val", "選抜の部")
                     ku_val = c[4].selectbox("出場区分", d_list, d_list.index(def_val) if def_val in d_list else 0, key=f"kuv_{uid}", label_visibility="collapsed")
 
-            entries_update[uid].update({"team_kata_chk":tk, "team_kata_role":tkr, "team_kumi_chk":tku, "team_kumi_role":tkur, "kata_chk":k_chk, "kata_val":k_val, "kata_rank":k_rank, "kumi_chk":ku_chk, "kumi_val":ku_val, "kumi_rank":ku_rank})
+            # ★KeyError修正: updateではなく代入を行う
+            entry_data.update({"team_kata_chk":tk, "team_kata_role":tkr, "team_kumi_chk":tku, "team_kumi_role":tkur, "kata_chk":k_chk, "kata_val":k_val, "kata_rank":k_rank, "kumi_chk":ku_chk, "kumi_val":ku_val, "kumi_rank":ku_rank})
+            entries_update[uid] = entry_data
 
         if not men.empty:
             st.subheader("男子")
@@ -599,7 +580,6 @@ def school_page(s_name):
         
         st.markdown("---")
         if st.button("✅ エントリーを保存してExcelを出力", type="primary", use_container_width=True):
-            # バリデーション実行
             errs = validate_counts(valid_members, entries_update, conf["limits"], t_conf["type"], {"m_kumite_mode":m_mode, "w_kumite_mode":w_mode})
             if errs:
                 for e in errs: st.error(e)
