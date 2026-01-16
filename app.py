@@ -19,7 +19,7 @@ KEY_FILE = 'secrets.json'
 SHEET_NAME = 'tournament_db'
 ADMIN_PASSWORD = "1234"
 
-# デフォルトの大会設定
+# 大会設定
 DEFAULT_TOURNAMENTS = {
     "kantou": {
         "name": "関東高等学校空手道大会 埼玉県予選",
@@ -134,16 +134,15 @@ def save_json(tab_name, data):
     ws.update_acell('A1', json.dumps(data, ensure_ascii=False))
 
 def load_members_master():
+    # キャッシュ有効期間を設けて通信削減
     if "master_cache" in st.session_state: return st.session_state["master_cache"]
     cols = ["school", "name", "sex", "grade", "dob", "jkf_no", "active"]
     try:
         recs = get_worksheet_safe("members").get_all_records()
         df = pd.DataFrame(recs) if recs else pd.DataFrame(columns=cols)
     except:
-        st.warning("データ読込中... 再読み込みしてください。")
         return pd.DataFrame(columns=cols)
     df['grade'] = pd.to_numeric(df['grade'], errors='coerce').fillna(0).astype(int)
-    # 内部的には文字列として扱う（計算に使わないため）
     df['jkf_no'] = df['jkf_no'].astype(str)
     st.session_state["master_cache"] = df
     return df
@@ -273,9 +272,6 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta):
 # 5. Excel生成 (シンプル版)
 # ---------------------------------------------------------
 def safe_write(ws, target, value, align_center=False):
-    """
-    結合セル対応書き込み (0落ち対策等の書式設定コードは削除済)
-    """
     if value is None: return
     if isinstance(target, str): cell = ws[target]
     else: cell = ws.cell(row=target[0], column=target[1])
@@ -285,13 +281,9 @@ def safe_write(ws, target, value, align_center=False):
             if cell.coordinate in r:
                 cell = ws.cell(row=r.min_row, column=r.min_col); break
     
-    # "3年" -> "3" の変換のみ残す
     if str(value).endswith("年") and str(value)[:-1].isdigit(): value = str(value).replace("年", "")
-    
     cell.value = value
-    
-    if align_center:
-        cell.alignment = Alignment(horizontal='center', vertical='center')
+    if align_center: cell.alignment = Alignment(horizontal='center', vertical='center')
 
 def generate_excel(school_name, school_data, members_df, t_id, t_conf):
     coords = COORD_DEF
@@ -368,6 +360,7 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
 # 6. UI: 学校ページ
 # ---------------------------------------------------------
 def school_page(s_name):
+    # ヘッダー (ログアウト等)
     col_h1, col_h2 = st.columns([3, 1])
     with col_h1: st.markdown(f"### 🏫 {s_name} 様")
     with col_h2:
@@ -385,6 +378,13 @@ def school_page(s_name):
     
     disp_year = conf.get("year", "〇")
     st.markdown(f"## 🥋 **令和{disp_year}年度 {t_conf['name']}** <small>エントリー画面</small>", unsafe_allow_html=True)
+    
+    # データを最新にするボタン
+    if st.button("🔄 データを最新にする (うまく表示されない場合)"):
+        if "master_cache" in st.session_state: del st.session_state["master_cache"]
+        if f"entry_cache_{active_tid}" in st.session_state: del st.session_state[f"entry_cache_{active_tid}"]
+        st.success("最新データを読み込みました")
+        time.sleep(1); st.rerun()
 
     if "schools_data" not in st.session_state: st.session_state.schools_data = load_schools()
     s_data = st.session_state.schools_data.get(s_name, {"principal":"", "advisors":[]})
@@ -462,6 +462,7 @@ def school_page(s_name):
         women = valid_members[valid_members['sex']=="女子"]
         entries_update = load_entries(active_tid)
         
+        # 新人戦 団体組手設定
         meta_key = f"_meta_{s_name}"
         school_meta = entries_update.get(meta_key, {"m_kumite_mode": "none", "w_kumite_mode": "none"})
         m_mode = "5"; w_mode = "5"
@@ -480,75 +481,134 @@ def school_page(s_name):
             school_meta["m_kumite_mode"] = m_mode; school_meta["w_kumite_mode"] = w_mode
             entries_update[meta_key] = school_meta
         
-        def render_entry_row(r, team_kumi_mode):
-            uid = f"{r['school']}_{r['name']}"
-            entry_data = entries_update.get(uid, {})
-            c = st.columns([2, 1.5, 1.5, 2.5, 2.5])
-            c[0].markdown(f"**{r['grade']}年 {r['name']}**")
-            
-            tk = c[1].checkbox("団体形", r.get("last_team_kata_chk"), key=f"tk_{uid}")
-            tkr = "正選手"
-            if tk: tkr = c[1].radio("役", ["正選手","補欠"], 0 if r.get("last_team_kata_role")=="正選手" else 1, key=f"tkr_{uid}", horizontal=True, label_visibility="collapsed")
-            
-            tku = False; tkur = "正選手"
-            if team_kumi_mode != "none":
-                label = f"団体組手({team_kumi_mode}人)"
-                tku = c[2].checkbox(label, r.get("last_team_kumi_chk"), key=f"tku_{uid}")
-                if tku: tkur = c[2].radio("役", ["正選手","補欠"], 0 if r.get("last_team_kumi_role")=="正選手" else 1, key=f"tkur_{uid}", horizontal=True, label_visibility="collapsed")
-            else: c[2].caption("-")
-            
-            k_chk = False; k_val = ""; k_rank = ""
-            if t_conf["type"] != "division":
-                k_chk = c[3].checkbox("個人形", r.get("last_kata_chk"), key=f"k_{uid}")
-                if k_chk:
-                    opts = ["一般","シード","補欠"]
-                    def_val = r.get("last_kata_val", "一般")
-                    k_val = c[3].selectbox("区分", opts, opts.index(def_val) if def_val in opts else 0, key=f"kv_{uid}", label_visibility="collapsed")
-                    if k_val != "補欠": k_rank = c[3].text_input("順位", r.get("last_kata_rank",""), key=f"kr_{uid}", placeholder="数字", label_visibility="collapsed")
-
-            ku_chk = c[4].checkbox("個人組手", r.get("last_kumi_chk"), key=f"ku_{uid}")
-            ku_val = ""; ku_rank = ""
-            if ku_chk:
-                if t_conf["type"] == "standard":
-                    opts = ["一般","シード","補欠"]
-                    def_val = r.get("last_kumi_val", "一般")
-                    ku_val = c[4].selectbox("区分", opts, opts.index(def_val) if def_val in opts else 0, key=f"kuv_{uid}", label_visibility="collapsed")
-                    if ku_val != "補欠": ku_rank = c[4].text_input("順位", r.get("last_kumi_rank",""), key=f"kur_{uid}", placeholder="数字", label_visibility="collapsed")
-                elif t_conf["type"] == "weight":
-                    w_key = "weights_m" if r['sex'] == "男子" else "weights_w"
-                    w_str = t_conf.get(w_key, "-55,-61,-68,-76,+76")
-                    w_list = [f"{w.strip()}kg級" for w in w_str.split(",")] + ["補欠"]
-                    def_val = r.get("last_kumi_val", w_list[0])
-                    if def_val not in w_list and def_val != "補欠": def_val = f"{def_val}kg級"
-                    idx = w_list.index(def_val) if def_val in w_list else 0
-                    ku_val = c[4].selectbox("階級", w_list, idx, key=f"kuv_{uid}", label_visibility="collapsed")
-                elif t_conf["type"] == "division":
-                    d_list = ["選抜の部", "1年生の部", "高入生の部", "補欠"]
-                    def_val = r.get("last_kumi_val", "選抜の部")
-                    ku_val = c[4].selectbox("出場区分", d_list, d_list.index(def_val) if def_val in d_list else 0, key=f"kuv_{uid}", label_visibility="collapsed")
-            entries_update[uid] = {"team_kata_chk":tk, "team_kata_role":tkr, "team_kumi_chk":tku, "team_kumi_role":tkur, "kata_chk":k_chk, "kata_val":k_val, "kata_rank":k_rank, "kumi_chk":ku_chk, "kumi_val":ku_val, "kumi_rank":ku_rank}
-
-        if not men.empty:
-            st.subheader("男子")
-            for i, r in men.iterrows(): render_entry_row(r, m_mode); st.divider()
-        if not women.empty:
-            st.subheader("女子")
-            for i, r in women.iterrows(): render_entry_row(r, w_mode); st.divider()
+        # 学年別タブ化
+        g_tabs = st.tabs([f"{g}年生" for g in target_grades])
         
+        for g_idx, grade in enumerate(target_grades):
+            with g_tabs[g_idx]:
+                # フォームで囲んで通信を遮断（保存ボタン押下時のみ通信）
+                with st.form(f"entry_form_{grade}"):
+                    st.caption("※「保存」ボタンを押すまで確定されません。")
+                    
+                    # ヘッダー行 (ラベルの代わり)
+                    cols = st.columns([1.5, 2.5, 2.5, 2.5, 2])
+                    cols[0].markdown("**氏名**")
+                    cols[1].markdown("**団体形** (なし/正/補)")
+                    kumi_label = f"**団体組手({m_mode if m_mode==w_mode else '選択'})**"
+                    cols[2].markdown(f"{kumi_label} (なし/正/補)")
+                    cols[3].markdown("**個人形** (なし/正/補)")
+                    cols[4].markdown("**個人組手** (階級)")
+
+                    target_members = valid_members[valid_members['grade'] == grade]
+                    
+                    # 選手ループ
+                    for i, r in target_members.iterrows():
+                        uid = f"{r['school']}_{r['name']}"
+                        
+                        # 既存データのマッピング (Radioボタン用に変換)
+                        # 団体形
+                        def_tk = "なし"
+                        if r.get("last_team_kata_chk"):
+                            def_tk = "正" if r.get("last_team_kata_role") == "正選手" else "補"
+                        
+                        # 団体組手
+                        def_tku = "なし"
+                        if r.get("last_team_kumi_chk"):
+                            def_tku = "正" if r.get("last_team_kumi_role") == "正選手" else "補"
+                        
+                        # 個人形
+                        def_k = "なし"
+                        if r.get("last_kata_chk"):
+                            val = r.get("last_kata_val")
+                            def_k = "補" if val == "補欠" else "正"
+
+                        # UI描画
+                        c = st.columns([1.5, 2.5, 2.5, 2.5, 2])
+                        c[0].write(f"{r['name']}") # 名前
+                        
+                        # 団体形 (Radio)
+                        opts_tk = ["なし", "正", "補"]
+                        idx_tk = opts_tk.index(def_tk) if def_tk in opts_tk else 0
+                        val_tk = c[1].radio(f"tk_{uid}", opts_tk, index=idx_tk, horizontal=True, key=f"rd_tk_{uid}", label_visibility="collapsed")
+                        
+                        # 団体組手 (Radio) - モードによって表示制御
+                        mode = m_mode if r['sex']=="男子" else w_mode
+                        if mode != "none":
+                            opts_tku = ["なし", "正", "補"]
+                            idx_tku = opts_tku.index(def_tku) if def_tku in opts_tku else 0
+                            val_tku = c[2].radio(f"tku_{uid}", opts_tku, index=idx_tku, horizontal=True, key=f"rd_tku_{uid}", label_visibility="collapsed")
+                        else:
+                            val_tku = "なし"; c[2].caption("-")
+
+                        # 個人形 (Radio)
+                        if t_conf["type"] != "division":
+                            opts_k = ["なし", "正", "補"]
+                            idx_k = opts_k.index(def_k) if def_k in opts_k else 0
+                            val_k = c[3].radio(f"k_{uid}", opts_k, index=idx_k, horizontal=True, key=f"rd_k_{uid}", label_visibility="collapsed")
+                        else:
+                            val_k = "なし"; c[3].caption("-")
+                        
+                        # 個人組手 (Selectbox)
+                        ku_val = ""
+                        if t_conf["type"] == "weight":
+                            w_key = "weights_m" if r['sex'] == "男子" else "weights_w"
+                            w_str = t_conf.get(w_key, "")
+                            w_list = ["出場しない"] + [f"{w.strip()}kg級" for w in w_str.split(",")] + ["補欠"]
+                            def_val = r.get("last_kumi_val", "出場しない")
+                            if def_val not in w_list and def_val != "補欠" and def_val != "出場しない": def_val = f"{def_val}kg級"
+                            idx = w_list.index(def_val) if def_val in w_list else 0
+                            ku_val = c[4].selectbox(f"ku_{uid}", w_list, index=idx, key=f"sel_ku_{uid}", label_visibility="collapsed")
+                        elif t_conf["type"] == "standard":
+                            opts = ["出場しない", "一般", "シード", "補欠"]
+                            def_val = r.get("last_kumi_val", "出場しない")
+                            idx = opts.index(def_val) if def_val in opts else 0
+                            ku_val = c[4].selectbox(f"ku_{uid}", opts, index=idx, key=f"sel_ku_{uid}", label_visibility="collapsed")
+                        
+                        # --- データ保存用ロジックへの変換 ---
+                        # 団体形
+                        tk_chk = (val_tk != "なし")
+                        tk_role = "正選手" if val_tk == "正" else ("補欠" if val_tk == "補" else "")
+                        
+                        # 団体組手
+                        tku_chk = (val_tku != "なし")
+                        tku_role = "正選手" if val_tku == "正" else ("補欠" if val_tku == "補" else "")
+                        
+                        # 個人形
+                        k_chk = (val_k != "なし")
+                        k_role = "一般" if val_k == "正" else ("補欠" if val_k == "補" else "") # 仮で一般
+                        
+                        # 個人組手
+                        ku_chk = (ku_val != "出場しない")
+                        ku_role = ku_val # そのまま保存
+                        
+                        # 保存
+                        entries_update[uid] = {
+                            "team_kata_chk": tk_chk, "team_kata_role": tk_role,
+                            "team_kumi_chk": tku_chk, "team_kumi_role": tku_role,
+                            "kata_chk": k_chk, "kata_val": k_role,
+                            "kumi_chk": ku_chk, "kumi_val": ku_role
+                        }
+
+                    # フォーム送信ボタン
+                    if st.form_submit_button(f"✅ {grade}年生のエントリーを保存"):
+                        save_entries(active_tid, entries_update)
+                        st.success(f"{grade}年生のデータを保存しました！")
+                        time.sleep(1); st.rerun()
+
         st.markdown("---")
-        if st.button("✅ エントリーを保存してExcelを出力", type="primary", use_container_width=True):
-            errs = validate_counts(valid_members, entries_update, conf["limits"], t_conf["type"], {"m_kumite_mode":m_mode, "w_kumite_mode":w_mode})
-            if errs:
+        # 最終出力ボタン（ここは全学年保存済み前提）
+        if st.button("📥 Excel作成画面へ進む (エラーチェック)", type="primary"):
+             errs = validate_counts(valid_members, entries_update, conf["limits"], t_conf["type"], {"m_kumite_mode":m_mode, "w_kumite_mode":w_mode})
+             if errs:
                 for e in errs: st.error(e)
-                st.warning("エラーがあります。")
-            else:
-                save_entries(active_tid, entries_update)
+                st.error("人数制限エラーがあります。各学年のタブに戻って修正し、保存ボタンを押してください。")
+             else:
+                st.success("エントリー内容に問題はありません。")
                 merged_latest = get_merged_data(s_name, active_tid)
                 fp, msg = generate_excel(s_name, s_data, merged_latest, active_tid, t_conf)
                 if fp:
-                    st.success("保存完了！ダウンロードしてください。")
                     with open(fp, "rb") as f:
-                        st.download_button("📥 Excelダウンロード", f, fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                        st.download_button("📥 Excel申込書をダウンロード", f, fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 else: st.error(msg)
 
 # ---------------------------------------------------------
