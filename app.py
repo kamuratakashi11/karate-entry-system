@@ -24,7 +24,7 @@ DEFAULT_TOURNAMENTS = {
     "kantou": {
         "name": "関東高等学校空手道大会 埼玉県予選",
         "template": "template_kantou.xlsx",
-        "type": "standard",
+        "type": "standard", # standard: 団体は1種類
         "grades": [1, 2, 3],
         "active": True
     },
@@ -38,7 +38,7 @@ DEFAULT_TOURNAMENTS = {
     "shinjin": {
         "name": "新人大会",
         "template": "template_shinjin.xlsx",
-        "type": "weight",
+        "type": "shinjin", # shinjin: 団体組手が5人/3人選択制
         "grades": [1, 2],
         "weights": "-55,-61,-68,-76,+76",
         "active": False
@@ -46,10 +46,21 @@ DEFAULT_TOURNAMENTS = {
     "senbatsu": {
         "name": "全国選抜 埼玉県予選",
         "template": "template_senbatsu.xlsx",
-        "type": "division",
+        "type": "division", # division: 選抜/1年/高入生 (形なし)
         "grades": [1, 2],
         "active": False
     }
+}
+
+# デフォルトの人数制限設定
+DEFAULT_LIMITS = {
+    "team_kata": {"min": 3, "max": 3},
+    "team_kumite_5": {"min": 3, "max": 5}, # 5人制
+    "team_kumite_3": {"min": 2, "max": 3}, # 3人制
+    "ind_kata_reg": {"max": 4}, # 個人形(正)
+    "ind_kata_sub": {"max": 2}, # 個人形(補)
+    "ind_kumi_reg": {"max": 4}, # 個人組手(正)
+    "ind_kumi_sub": {"max": 2}  # 個人組手(補)
 }
 
 # Excel座標設定
@@ -131,12 +142,16 @@ def load_members_master():
         st.warning("データの読み込みに時間がかかっています。再読み込みしてください。")
         return pd.DataFrame(columns=cols)
     df['grade'] = pd.to_numeric(df['grade'], errors='coerce').fillna(0).astype(int)
+    # JKF番号の0落ち防止のため文字列化
+    df['jkf_no'] = df['jkf_no'].astype(str)
     st.session_state["master_cache"] = df
     return df
 
 def save_members_master(df):
     ws = get_worksheet_safe("members"); ws.clear()
     df = df.fillna("")
+    # JKF番号を文字列として保存 (' をつけることでExcelでの0落ちも防ぐ)
+    df['jkf_no'] = df['jkf_no'].astype(str)
     ws.update([df.columns.tolist()] + df.astype(str).values.tolist())
     st.session_state["master_cache"] = df
 
@@ -160,11 +175,25 @@ def load_auth(): return load_json("auth", {})
 def save_auth(d): save_json("auth", d)
 def load_schools(): return load_json("schools", {})
 def save_schools(d): save_json("schools", d)
-def load_conf(): return load_json("config", {"year": "6", "tournaments": DEFAULT_TOURNAMENTS})
+
+# Config読み込み (Year, Limitsを含む)
+def load_conf():
+    default_conf = {
+        "year": "6", # デフォルト年度
+        "tournaments": DEFAULT_TOURNAMENTS,
+        "limits": DEFAULT_LIMITS
+    }
+    # 既存のConfigに足りないキーがあればデフォルトで埋める
+    data = load_json("config", default_conf)
+    if "limits" not in data: data["limits"] = DEFAULT_LIMITS
+    if "tournaments" not in data: data["tournaments"] = DEFAULT_TOURNAMENTS
+    if "year" not in data: data["year"] = "6"
+    return data
+
 def save_conf(d): save_json("config", d)
 
 # ---------------------------------------------------------
-# 4. ロジック
+# 4. ロジック (年度更新・結合・バリデーション)
 # ---------------------------------------------------------
 def perform_year_rollover():
     if "master_cache" in st.session_state: del st.session_state["master_cache"]
@@ -190,39 +219,100 @@ def get_merged_data(school_name, tournament_id):
     def get_ent(row, key):
         uid = f"{row['school']}_{row['name']}"
         return entries.get(uid, {}).get(key, None)
+    
     cols_to_add = ["team_kata_chk", "team_kata_role", "team_kumi_chk", "team_kumi_role",
                    "kata_chk", "kata_val", "kata_rank", "kumi_chk", "kumi_val", "kumi_rank"]
     for c in cols_to_add:
         my_members[f"last_{c}"] = my_members.apply(lambda r: get_ent(r, c), axis=1)
     return my_members
 
-# ---------------------------------------------------------
-# 5. Excel生成 (結合セル対応版)
-# ---------------------------------------------------------
-def safe_write(ws, target, value, align_center=False):
-    """
-    結合セルであってもエラーを出さずに書き込むヘルパー関数
-    target: "B42" のような文字列 または (row, col) のタプル
-    """
-    if value is None: return
-
-    # セルオブジェクトを取得
-    if isinstance(target, str):
-        cell = ws[target]
-    else:
-        cell = ws.cell(row=target[0], column=target[1])
-
-    # 結合セル判定
-    if isinstance(cell, MergedCell):
-        for merged_range in ws.merged_cells.ranges:
-            if cell.coordinate in merged_range:
-                # 結合範囲の左上を取得して書き込む
-                cell = ws.cell(row=merged_range.min_row, column=merged_range.min_col)
-                break
+# 人数制限チェック
+def validate_counts(members_df, entries_data, limits, t_type, school_meta):
+    errs = []
     
-    # 書き込み
+    # 性別ごとに集計
+    for sex in ["男子", "女子"]:
+        # その性別の部員のみ抽出
+        sex_df = members_df[members_df['sex'] == sex]
+        
+        # カウント変数
+        cnt_tk = 0 # 団体形(正選手) ※補欠は含まない
+        cnt_tku = 0 # 団体組手
+        cnt_ind_k_reg = 0; cnt_ind_k_sub = 0
+        cnt_ind_ku_reg = 0; cnt_ind_ku_sub = 0
+        
+        for _, r in sex_df.iterrows():
+            uid = f"{r['school']}_{r['name']}"
+            ent = entries_data.get(uid, {})
+            
+            # 団体形 (正選手のみカウント)
+            if ent.get("team_kata_chk") and ent.get("team_kata_role") == "正選手": cnt_tk += 1
+            # 団体組手 (全員カウント)
+            if ent.get("team_kumi_chk"): cnt_tku += 1
+            
+            # 個人形
+            if ent.get("kata_chk"):
+                if ent.get("kata_val") == "補欠": cnt_ind_k_sub += 1
+                else: cnt_ind_k_reg += 1
+            # 個人組手
+            if ent.get("kumi_chk"):
+                if ent.get("kumi_val") == "補欠": cnt_ind_ku_sub += 1
+                else: cnt_ind_ku_reg += 1
+
+        # --- チェック ---
+        
+        # 1. 団体形 (3人固定)
+        if cnt_tk > 0: # エントリーがある場合のみチェック
+            mn, mx = limits["team_kata"]["min"], limits["team_kata"]["max"]
+            if not (mn <= cnt_tk <= mx):
+                errs.append(f"❌ {sex}団体形(正選手): 現在{cnt_tk}名 (規定: {mn}～{mx}名)")
+
+        # 2. 団体組手 (モードによって規定が変わる)
+        if cnt_tku > 0:
+            # その性別の組手モードを取得 (5 or 3)
+            # shinjin以外はデフォルト5とする
+            mode = "5"
+            if t_type == "shinjin":
+                mode = school_meta.get(f"{sex}_kumite_mode", "none")
+            
+            if mode == "5":
+                mn, mx = limits["team_kumite_5"]["min"], limits["team_kumite_5"]["max"]
+                if not (mn <= cnt_tku <= mx):
+                    errs.append(f"❌ {sex}団体組手(5人制): 現在{cnt_tku}名 (規定: {mn}～{mx}名)")
+            elif mode == "3":
+                mn, mx = limits["team_kumite_3"]["min"], limits["team_kumite_3"]["max"]
+                if not (mn <= cnt_tku <= mx):
+                    errs.append(f"❌ {sex}団体組手(3人制): 現在{cnt_tku}名 (規定: {mn}～{mx}名)")
+        
+        # 3. 個人戦
+        if cnt_ind_k_reg > limits["ind_kata_reg"]["max"]: errs.append(f"❌ {sex}個人形(正): 定員オーバー ({cnt_ind_k_reg}/{limits['ind_kata_reg']['max']})")
+        if cnt_ind_k_sub > limits["ind_kata_sub"]["max"]: errs.append(f"❌ {sex}個人形(補): 定員オーバー ({cnt_ind_k_sub}/{limits['ind_kata_sub']['max']})")
+        if cnt_ind_ku_reg > limits["ind_kumi_reg"]["max"]: errs.append(f"❌ {sex}個人組手(正): 定員オーバー ({cnt_ind_ku_reg}/{limits['ind_kumi_reg']['max']})")
+        if cnt_ind_ku_sub > limits["ind_kumi_sub"]["max"]: errs.append(f"❌ {sex}個人組手(補): 定員オーバー ({cnt_ind_ku_sub}/{limits['ind_kumi_sub']['max']})")
+
+    return errs
+
+# ---------------------------------------------------------
+# 5. Excel生成 (修正版: A1選択 & 文字列書き込み)
+# ---------------------------------------------------------
+def safe_write(ws, target, value, align_center=False, is_string=False):
+    if value is None: return
+    if isinstance(target, str): cell = ws[target]
+    else: cell = ws.cell(row=target[0], column=target[1])
+
+    if isinstance(cell, MergedCell):
+        for r in ws.merged_cells.ranges:
+            if cell.coordinate in r:
+                cell = ws.cell(row=r.min_row, column=r.min_col); break
+    
     if str(value).endswith("年") and str(value)[:-1].isdigit(): value = str(value).replace("年", "")
-    cell.value = value
+    
+    # 0落ち対策: 明示的に文字列としてセット
+    if is_string:
+        cell.number_format = '@' # Text format
+        cell.value = str(value)
+    else:
+        cell.value = value
     
     if align_center:
         cell.alignment = Alignment(horizontal='center', vertical='center')
@@ -235,6 +325,7 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
     except: return None, f"{template_file} が見つかりません。"
     
     conf = load_conf()
+    # 年度書き込み
     safe_write(ws, coords["year"], conf.get("year", ""))
     safe_write(ws, coords["tournament_name"], t_conf.get("name", ""))
     safe_write(ws, coords["date"], f"令和{datetime.date.today().year-2018}年{datetime.date.today().month}月{datetime.date.today().day}日")
@@ -263,7 +354,8 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
         safe_write(ws, (r, cols["name"]), row["name"])
         safe_write(ws, (r, cols["grade"]), row["grade"])
         safe_write(ws, (r, cols["dob"]), row["dob"])
-        safe_write(ws, (r, cols["jkf_no"]), row["jkf_no"])
+        # JKF番号を文字列として書き込み (0落ち防止)
+        safe_write(ws, (r, cols["jkf_no"]), row["jkf_no"], is_string=True)
         
         sex = row["sex"]
         tk_col = cols["m_team_kata"] if sex=="男子" else cols["w_team_kata"]
@@ -293,6 +385,15 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
             elif t_conf["type"] == "division": txt = str(val)
             else: txt = "○"
             safe_write(ws, (r, ku_col), txt, True)
+    
+    # 【重要】保存時にA1セルを選択し、スクロールをリセットする
+    # すべてのシートビューをリセット
+    sheet_views = ws.sheet_views
+    if sheet_views:
+        # 既存のビューをA1に強制変更
+        sheet_views.sheetView[0].topLeftCell = 'A1'
+        sheet_views.sheetView[0].selection[0].activeCell = 'A1'
+        sheet_views.sheetView[0].selection[0].sqref = 'A1'
 
     fname = f"申込書_{school_name}.xlsx"
     wb.save(fname)
@@ -317,7 +418,10 @@ def school_page(s_name):
     t_conf = conf["tournaments"].get(active_tid, {}) if active_tid else {}
     
     if not active_tid: st.error("現在受付中の大会はありません。"); return
-    st.markdown(f"## 🥋 **{t_conf['name']}** <small>エントリー画面</small>", unsafe_allow_html=True)
+    
+    # 年度表示
+    disp_year = conf.get("year", "〇")
+    st.markdown(f"## 🥋 **令和{disp_year}年度 {t_conf['name']}** <small>エントリー画面</small>", unsafe_allow_html=True)
 
     if "schools_data" not in st.session_state: st.session_state.schools_data = load_schools()
     s_data = st.session_state.schools_data.get(s_name, {"principal":"", "advisors":[]})
@@ -399,22 +503,61 @@ def school_page(s_name):
 
         men = valid_members[valid_members['sex']=="男子"]
         women = valid_members[valid_members['sex']=="女子"]
+        
         entries_update = load_entries(active_tid)
         
-        def render_entry_row(r):
+        # --- 新人戦用 団体組手タイプ選択 (排他制御) ---
+        # メタデータをEntriesの特殊キー "_meta_{school_name}" に保存する
+        meta_key = f"_meta_{s_name}"
+        school_meta = entries_update.get(meta_key, {"m_kumite_mode": "none", "w_kumite_mode": "none"})
+        
+        m_mode = "5" # デフォルト
+        w_mode = "5"
+        
+        if t_conf["type"] == "shinjin":
+            st.info("団体組手は「5人制」か「3人制」のどちらかを選択してください。")
+            c_m, c_w = st.columns(2)
+            
+            # 男子設定
+            curr_m = school_meta.get("m_kumite_mode", "none")
+            idx_m = ["none", "5", "3"].index(curr_m) if curr_m in ["none", "5", "3"] else 0
+            new_m = c_m.radio("男子 団体組手", ["出場しない", "5人制", "3人制"], index=idx_m, horizontal=True)
+            m_mode = "none" if new_m == "出場しない" else ("5" if new_m == "5人制" else "3")
+            
+            # 女子設定
+            curr_w = school_meta.get("w_kumite_mode", "none")
+            idx_w = ["none", "5", "3"].index(curr_w) if curr_w in ["none", "5", "3"] else 0
+            new_w = c_w.radio("女子 団体組手", ["出場しない", "5人制", "3人制"], index=idx_w, horizontal=True)
+            w_mode = "none" if new_w == "出場しない" else ("5" if new_w == "5人制" else "3")
+            
+            # メタデータ更新
+            school_meta["m_kumite_mode"] = m_mode
+            school_meta["w_kumite_mode"] = w_mode
+            entries_update[meta_key] = school_meta
+        
+        # --- レンダリング関数 ---
+        def render_entry_row(r, team_kumi_mode):
             uid = f"{r['school']}_{r['name']}"
             entry_data = entries_update.get(uid, {})
+            
             c = st.columns([2, 1.5, 1.5, 2.5, 2.5])
             c[0].markdown(f"**{r['grade']}年 {r['name']}**")
             
+            # 団体形
             tk = c[1].checkbox("団体形", r.get("last_team_kata_chk"), key=f"tk_{uid}")
             tkr = "正選手"
             if tk: tkr = c[1].radio("役", ["正選手","補欠"], 0 if r.get("last_team_kata_role")=="正選手" else 1, key=f"tkr_{uid}", horizontal=True, label_visibility="collapsed")
             
-            tku = c[2].checkbox("団体組手", r.get("last_team_kumi_chk"), key=f"tku_{uid}")
-            tkur = "正選手"
-            if tku: tkur = c[2].radio("役", ["正選手","補欠"], 0 if r.get("last_team_kumi_role")=="正選手" else 1, key=f"tkur_{uid}", horizontal=True, label_visibility="collapsed")
+            # 団体組手 (モードによって表示制御)
+            tku = False; tkur = "正選手"
+            if team_kumi_mode != "none":
+                label = f"団体組手({team_kumi_mode}人)"
+                tku = c[2].checkbox(label, r.get("last_team_kumi_chk"), key=f"tku_{uid}")
+                if tku: tkur = c[2].radio("役", ["正選手","補欠"], 0 if r.get("last_team_kumi_role")=="正選手" else 1, key=f"tkur_{uid}", horizontal=True, label_visibility="collapsed")
+            else:
+                c[2].caption("-")
             
+            # 個人形
             k_chk = False; k_val = ""; k_rank = ""
             if t_conf["type"] != "division":
                 k_chk = c[3].checkbox("個人形", r.get("last_kata_chk"), key=f"k_{uid}")
@@ -424,6 +567,7 @@ def school_page(s_name):
                     k_val = c[3].selectbox("区分", opts, opts.index(def_val) if def_val in opts else 0, key=f"kv_{uid}", label_visibility="collapsed")
                     if k_val != "補欠": k_rank = c[3].text_input("順位", r.get("last_kata_rank",""), key=f"kr_{uid}", placeholder="数字", label_visibility="collapsed")
 
+            # 個人組手
             ku_chk = c[4].checkbox("個人組手", r.get("last_kumi_chk"), key=f"ku_{uid}")
             ku_val = ""; ku_rank = ""
             if ku_chk:
@@ -444,26 +588,31 @@ def school_page(s_name):
                     def_val = r.get("last_kumi_val", "選抜の部")
                     ku_val = c[4].selectbox("出場区分", d_list, d_list.index(def_val) if def_val in d_list else 0, key=f"kuv_{uid}", label_visibility="collapsed")
 
-            entry_data.update({"team_kata_chk":tk, "team_kata_role":tkr, "team_kumi_chk":tku, "team_kumi_role":tkur, "kata_chk":k_chk, "kata_val":k_val, "kata_rank":k_rank, "kumi_chk":ku_chk, "kumi_val":ku_val, "kumi_rank":ku_rank})
-            entries_update[uid] = entry_data
+            entries_update[uid].update({"team_kata_chk":tk, "team_kata_role":tkr, "team_kumi_chk":tku, "team_kumi_role":tkur, "kata_chk":k_chk, "kata_val":k_val, "kata_rank":k_rank, "kumi_chk":ku_chk, "kumi_val":ku_val, "kumi_rank":ku_rank})
 
         if not men.empty:
             st.subheader("男子")
-            for i, r in men.iterrows(): render_entry_row(r); st.divider()
+            for i, r in men.iterrows(): render_entry_row(r, m_mode); st.divider()
         if not women.empty:
             st.subheader("女子")
-            for i, r in women.iterrows(): render_entry_row(r); st.divider()
+            for i, r in women.iterrows(): render_entry_row(r, w_mode); st.divider()
         
         st.markdown("---")
         if st.button("✅ エントリーを保存してExcelを出力", type="primary", use_container_width=True):
-            save_entries(active_tid, entries_update)
-            merged_latest = get_merged_data(s_name, active_tid)
-            fp, msg = generate_excel(s_name, s_data, merged_latest, active_tid, t_conf)
-            if fp:
-                st.success("保存しました！ Excelファイルをダウンロードしてください。")
-                with open(fp, "rb") as f:
-                    st.download_button("📥 Excelダウンロード", f, fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            else: st.error(msg)
+            # バリデーション実行
+            errs = validate_counts(valid_members, entries_update, conf["limits"], t_conf["type"], {"m_kumite_mode":m_mode, "w_kumite_mode":w_mode})
+            if errs:
+                for e in errs: st.error(e)
+                st.warning("エラーがあります。修正してください。")
+            else:
+                save_entries(active_tid, entries_update)
+                merged_latest = get_merged_data(s_name, active_tid)
+                fp, msg = generate_excel(s_name, s_data, merged_latest, active_tid, t_conf)
+                if fp:
+                    st.success("保存しました！ Excelファイルをダウンロードしてください。")
+                    with open(fp, "rb") as f:
+                        st.download_button("📥 Excelダウンロード", f, fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                else: st.error(msg)
 
 # ---------------------------------------------------------
 # 7. UI: 管理者ページ
@@ -475,16 +624,50 @@ def admin_page():
     t1, t2, t3, t4 = st.tabs(["🏆 大会設定", "📥 データ出力", "🏫 アカウント", "📅 年次処理"])
     
     with t1:
-        st.subheader("大会マスター設定")
+        st.subheader("基本設定")
+        new_year = st.text_input("現在の年度 (Excelに印字されます)", conf.get("year", "6"))
+        
+        st.subheader("大会切り替え")
         t_opts = list(conf["tournaments"].keys())
         active_now = next((k for k, v in conf["tournaments"].items() if v["active"]), None)
         new_active = st.radio("受付中の大会", t_opts, index=t_opts.index(active_now) if active_now else 0, format_func=lambda x: conf["tournaments"][x]["name"])
-        if new_active != active_now:
-            if st.button("大会を切り替える"):
+        
+        if st.button("設定を保存 & 大会切替"):
+            conf["year"] = new_year
+            if new_active != active_now:
                 for k in conf["tournaments"]: conf["tournaments"][k]["active"] = (k == new_active)
-                save_conf(conf); st.success("切り替えました"); st.rerun()
+            save_conf(conf); st.success("保存しました"); st.rerun()
+
         st.divider()
-        st.subheader("階級設定 (新人戦)")
+        st.subheader("詳細設定")
+        st.caption("人数制限 (Min-Max) の設定")
+        
+        with st.expander("参加人数制限の設定", expanded=True):
+            lm = conf["limits"]
+            c1, c2 = st.columns(2)
+            lm["team_kata"]["min"] = c1.number_input("団体形 下限", 0, 10, lm["team_kata"]["min"])
+            lm["team_kata"]["max"] = c2.number_input("団体形 上限", 0, 10, lm["team_kata"]["max"])
+            
+            c1, c2 = st.columns(2)
+            lm["team_kumite_5"]["min"] = c1.number_input("団体組手(5人) 下限", 0, 10, lm["team_kumite_5"]["min"])
+            lm["team_kumite_5"]["max"] = c2.number_input("団体組手(5人) 上限", 0, 10, lm["team_kumite_5"]["max"])
+            
+            c1, c2 = st.columns(2)
+            lm["team_kumite_3"]["min"] = c1.number_input("団体組手(3人) 下限", 0, 10, lm["team_kumite_3"]["min"])
+            lm["team_kumite_3"]["max"] = c2.number_input("団体組手(3人) 上限", 0, 10, lm["team_kumite_3"]["max"])
+            
+            st.caption("個人戦 (上限のみ)")
+            c1, c2 = st.columns(2)
+            lm["ind_kata_reg"]["max"] = c1.number_input("個人形(正) 上限", 0, 10, lm["ind_kata_reg"]["max"])
+            lm["ind_kata_sub"]["max"] = c2.number_input("個人形(補) 上限", 0, 10, lm["ind_kata_sub"]["max"])
+            c1, c2 = st.columns(2)
+            lm["ind_kumi_reg"]["max"] = c1.number_input("個人組手(正) 上限", 0, 10, lm["ind_kumi_reg"]["max"])
+            lm["ind_kumi_sub"]["max"] = c2.number_input("個人組手(補) 上限", 0, 10, lm["ind_kumi_sub"]["max"])
+            
+            if st.button("人数制限を保存"):
+                conf["limits"] = lm; save_conf(conf); st.success("保存しました")
+
+        st.caption("新人戦 階級設定")
         t_data = conf["tournaments"]["shinjin"]
         with st.form("edit_t"):
             w_in = st.text_area("階級リスト", t_data.get("weights", ""))
