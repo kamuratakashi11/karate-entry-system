@@ -374,12 +374,8 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
             else: txt = "○"
             safe_write(ws, (r, ku_col), txt, True)
     
-    # 保存時にA1セルを強制選択
-    sheet_views = ws.sheet_views
-    if sheet_views:
-        sheet_views.sheetView[0].topLeftCell = 'A1'
-        sheet_views.sheetView[0].selection[0].activeCell = 'A1'
-        sheet_views.sheetView[0].selection[0].sqref = 'A1'
+    # 【エラー対策】A1選択コードは削除しました。
+    # 代わりにテンプレートファイル自体を「A1を選択して保存」したものを使用してください。
 
     fname = f"申込書_{school_name}.xlsx"
     wb.save(fname)
@@ -553,7 +549,7 @@ def school_page(s_name):
                 if t_conf["type"] == "standard":
                     opts = ["一般","シード","補欠"]
                     def_val = r.get("last_kumi_val", "一般")
-                    ku_val = c[4].selectbox("区分", opts, opts.index(def_val) if def_val in opts else 0, key=f"kuv_{uid}", label_visibility="collapsed")
+                    ku_val = c[4].selectbox("区分", opts, opts.index(def_val) if def_val in opts else 0, key=f"kv_{uid}", label_visibility="collapsed")
                     if ku_val != "補欠": ku_rank = c[4].text_input("順位", r.get("last_kumi_rank",""), key=f"kur_{uid}", placeholder="数字", label_visibility="collapsed")
                 elif t_conf["type"] == "weight":
                     w_str = t_conf.get("weights", "-55,-61,-68,-76,+76")
@@ -567,9 +563,8 @@ def school_page(s_name):
                     def_val = r.get("last_kumi_val", "選抜の部")
                     ku_val = c[4].selectbox("出場区分", d_list, d_list.index(def_val) if def_val in d_list else 0, key=f"kuv_{uid}", label_visibility="collapsed")
 
-            # ★KeyError修正: updateではなく代入を行う
-            entry_data.update({"team_kata_chk":tk, "team_kata_role":tkr, "team_kumi_chk":tku, "team_kumi_role":tkur, "kata_chk":k_chk, "kata_val":k_val, "kata_rank":k_rank, "kumi_chk":ku_chk, "kumi_val":ku_val, "kumi_rank":ku_rank})
-            entries_update[uid] = entry_data
+            # 代入方式 (KeyError回避)
+            entries_update[uid] = {"team_kata_chk":tk, "team_kata_role":tkr, "team_kumi_chk":tku, "team_kumi_role":tkur, "kata_chk":k_chk, "kata_val":k_val, "kata_rank":k_rank, "kumi_chk":ku_chk, "kumi_val":ku_val, "kumi_rank":ku_rank}
 
         if not men.empty:
             st.subheader("男子")
