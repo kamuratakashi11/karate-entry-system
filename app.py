@@ -347,7 +347,6 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
         safe_write(ws, c["d2"], "○" if a.get("d2") else "×", True)
     
     cols = coords["cols"]
-    # Excel出力時は確実に最新データをマージしたものを使用
     entries = members_df[
         (members_df['last_team_kata_chk']==True) | (members_df['last_team_kumi_chk']==True) |
         (members_df['last_kata_chk']==True) | (members_df['last_kumi_chk']==True)
@@ -496,7 +495,7 @@ def school_page(s_name):
         st.markdown(f"**出場対象学年:** {target_grades} 年生")
         merged = get_merged_data(s_name, active_tid)
         
-        # NameError防止: ここで全対象者を確保
+        # NameError回避: ここで全員分を確保
         all_valid_members = merged[merged['grade'].isin(target_grades)].sort_values(by="grade").copy()
         
         if all_valid_members.empty: st.warning("部員名簿が空です。"); return
@@ -642,7 +641,7 @@ def school_page(s_name):
                                 time.sleep(1); st.rerun()
 
         st.markdown("---")
-        # NameError回避: all_valid_members を使用
+        # all_valid_members を使用
         if st.button("📥 Excel作成画面へ進む (人数チェック)", type="primary"):
              latest_entries = load_entries(active_tid)
              errs = validate_counts(all_valid_members, latest_entries, conf["limits"], t_conf["type"], {"m_kumite_mode":m_mode, "w_kumite_mode":w_mode})
