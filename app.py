@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import openpyxl
 from openpyxl.styles import Alignment
-from openpyxl.cell.cell import MergedCell
+from openpyxl.cell import MergedCell # 修正: 一般的なインポートパスに変更
 import json
 import datetime
 import io
@@ -243,7 +243,6 @@ def get_merged_data(school_name, tournament_id):
     if master.empty: return pd.DataFrame()
     my_members = master[master['school'] == school_name].copy()
     
-    # 常に最新のエントリーを取得
     if f"entry_cache_{tournament_id}" in st.session_state:
         entries = st.session_state[f"entry_cache_{tournament_id}"]
     else:
