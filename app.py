@@ -266,7 +266,6 @@ def get_merged_data(school_name, tournament_id):
     def get_ent(row, key):
         uid = f"{row['school']}_{row['name']}"
         val = entries.get(uid, {}).get(key, None)
-        # 互換性: 一般->正
         if val == "一般": return "正"
         return val
     
@@ -299,7 +298,8 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta):
             if ent.get("kumi_chk"):
                 val = ent.get("kumi_val", "")
                 if val == "補欠": cnt_ind_ku_sub += 1
-                elif val and val != "出場しない" and val != "シード": cnt_ind_ku_reg += 1
+                # "なし" はカウントしない
+                elif val and val != "出場しない" and val != "なし" and val != "シード": cnt_ind_ku_reg += 1
 
         if cnt_tk > 0:
             mn, mx = limits["team_kata"]["min"], limits["team_kata"]["max"]
@@ -321,9 +321,9 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta):
                 if not (mn <= cnt_tku <= mx):
                     errs.append(f"❌ {sex}団体組手(3人制): 正選手は {mn}～{mx}名で登録してください。(現在{cnt_tku}名)")
         
-        if cnt_ind_k_reg > limits["ind_kata_reg"]["max"]: errs.append(f"❌ {sex}個人形(正): 上限 {limits['ind_kata_reg']['max']}名を超えています。")
+        if cnt_ind_k_reg > limits["ind_kata_reg"]["max"]: errs.append(f"❌ {sex}個人形(正): 上限 {limits['ind_kata_reg']['max']}名を超えています。(シード除く)")
         if cnt_ind_k_sub > limits["ind_kata_sub"]["max"]: errs.append(f"❌ {sex}個人形(補): 上限 {limits['ind_kata_sub']['max']}名を超えています。")
-        if cnt_ind_ku_reg > limits["ind_kumi_reg"]["max"]: errs.append(f"❌ {sex}個人組手(正): 上限 {limits['ind_kumi_reg']['max']}名を超えています。")
+        if cnt_ind_ku_reg > limits["ind_kumi_reg"]["max"]: errs.append(f"❌ {sex}個人組手(正): 上限 {limits['ind_kumi_reg']['max']}名を超えています。(シード除く)")
         if cnt_ind_ku_sub > limits["ind_kumi_sub"]["max"]: errs.append(f"❌ {sex}個人組手(補): 上限 {limits['ind_kumi_sub']['max']}名を超えています。")
 
     return errs
@@ -423,6 +423,15 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
 # 6. UI: 学校ページ
 # ---------------------------------------------------------
 def school_page(s_name):
+    # CSS: ラジオボタンをシンプルに。ヘッダー固定は削除
+    st.markdown("""
+    <style>
+    div[data-testid="stRadio"] > div {
+        flex-direction: row; /* 横並び */
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     col_h1, col_h2 = st.columns([3, 1])
     with col_h1: st.markdown(f"### 🏫 {s_name} 様")
     with col_h2:
@@ -491,29 +500,14 @@ def school_page(s_name):
                 entries_update[meta_key] = school_meta
 
         with st.form("entry_form_unified"):
-            # ヘッダー固定用CSS
-            st.markdown("""
-                <style>
-                .sticky-header {
-                    position: sticky;
-                    top: 0;
-                    background-color: white;
-                    z-index: 999;
-                    padding-top: 10px;
-                    padding-bottom: 10px;
-                    border-bottom: 2px solid #f0f2f6;
-                    font-weight: bold;
-                }
-                </style>
-            """, unsafe_allow_html=True)
-
+            # ヘッダー (ver1.19.1スタイルに戻す、ただし列幅は最新)
             cols = st.columns([2.0, 2.0, 2.0, 0.2, 2.2, 3.2])
-            cols[0].markdown('<div class="sticky-header">氏名</div>', unsafe_allow_html=True)
-            cols[1].markdown('<div class="sticky-header">団体形 (なし/正/補)</div>', unsafe_allow_html=True)
-            kumi_label = f"団体組手({m_mode if m_mode==w_mode else '選択'}) (なし/正/補)"
-            cols[2].markdown(f'<div class="sticky-header">{kumi_label}</div>', unsafe_allow_html=True)
-            cols[4].markdown('<div class="sticky-header">個人形 (なし/シ/正/補) [順位]</div>', unsafe_allow_html=True)
-            cols[5].markdown('<div class="sticky-header">個人組手 (なし/シ/正/補) [順位]</div>', unsafe_allow_html=True)
+            cols[0].markdown("**氏名**")
+            cols[1].markdown("**団体形** (なし/正/補)")
+            kumi_label = f"**団体組手({m_mode if m_mode==w_mode else '選択'})**"
+            cols[2].markdown(f"{kumi_label} (なし/正/補)")
+            cols[4].markdown("**個人形** (なし/シ/正/補)[順位]")
+            cols[5].markdown("**個人組手** (なし/シ/正/補)[順位]")
 
             form_buffer = {}
 
@@ -535,7 +529,7 @@ def school_page(s_name):
                 c = st.columns([2.0, 2.0, 2.0, 0.2, 2.2, 3.2])
                 c[0].markdown(f'<span style="{name_style}">{r["grade"]}年 {r["name"]}</span>', unsafe_allow_html=True)
                 
-                # 団体: 1行・3択
+                # 団体: 3択
                 opts_tk = ["なし", "正", "補"]
                 idx_tk = opts_tk.index(def_tk) if def_tk in opts_tk else 0
                 val_tk = c[1].radio(f"tk_{uid}", opts_tk, index=idx_tk, horizontal=True, key=f"rd_tk_{uid}", label_visibility="collapsed")
@@ -568,7 +562,6 @@ def school_page(s_name):
                 w_str = t_conf.get(w_key, "")
                 w_list = ["出場しない"] + [f"{w.strip()}kg級" for w in w_str.split(",")] + ["補欠"]
                 
-                # 防波堤
                 raw_kumi = r.get("last_kumi_val")
                 if raw_kumi is None or pd.isna(raw_kumi):
                     def_val = "出場しない"
@@ -576,12 +569,17 @@ def school_page(s_name):
                     def_val = str(raw_kumi)
                 
                 if t_conf["type"] == "standard":
-                    # 1行・4択
-                    opts_ku = ["出場しない", "シード", "正", "補"]
-                    if def_val not in opts_ku: def_val = "出場しない"
+                    # --- ここを変更: 「なし」「シード」「正」「補」 ---
+                    opts_ku = ["なし", "シード", "正", "補"]
+                    
+                    # データ整合性 (DB="出場しない" -> UI="なし")
+                    if def_val == "出場しない": def_val = "なし"
+                    if def_val not in opts_ku: def_val = "なし"
+                    
                     idx = opts_ku.index(def_val)
                     ku_val = c5a.radio(f"ku_{uid}", opts_ku, index=idx, horizontal=True, key=f"rd_ku_{uid}", label_visibility="collapsed")
                 else:
+                    # 体重別など
                     if "kg" in def_val and t_conf["type"] == "standard": def_val = "出場しない"
                     elif t_conf["type"] == "weight" and def_val not in w_list and def_val != "補欠" and def_val != "出場しない": 
                         def_val = f"{def_val}kg級"
@@ -611,7 +609,12 @@ def school_page(s_name):
                     k_role = raw["val_k"]
                     k_rank = raw["rank_k"]
                     
-                    ku_chk = (raw["ku_val"] != "出場しない")
+                    # 個人組手 (standardの場合は "なし" もチェック)
+                    if t_conf["type"] == "standard":
+                        ku_chk = (raw["ku_val"] != "なし")
+                    else:
+                        ku_chk = (raw["ku_val"] != "出場しない")
+                        
                     ku_role = raw["ku_val"]
                     ku_rank = raw["rank_ku"]
 
