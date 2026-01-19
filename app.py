@@ -249,7 +249,6 @@ def get_merged_data(school_name, tournament_id):
     if master.empty: return pd.DataFrame()
     my_members = master[master['school'] == school_name].copy()
     
-    # 常に最新のエントリーを取得
     if f"entry_cache_{tournament_id}" in st.session_state:
         entries = st.session_state[f"entry_cache_{tournament_id}"]
     else:
@@ -508,7 +507,6 @@ def school_page(s_name):
         st.markdown(f"**出場対象学年:** {target_grades} 年生")
         merged = get_merged_data(s_name, active_tid)
         
-        # 変数をここで確実に定義（NameError回避）
         valid_members = merged[merged['grade'].isin(target_grades)].sort_values(by="grade").copy()
         
         if valid_members.empty: st.warning("部員名簿が空です。"); return
@@ -653,11 +651,9 @@ def school_page(s_name):
                     }
                 
                 # 2. 全体人数チェック（厳格モード）
-                # 既存データを読み込み、今回の変更分を反映させた状態でチェック
                 current_entries = load_entries(active_tid)
                 current_entries.update(temp_processed) # 仮マージ
                 
-                # チェック実行
                 errs = validate_counts(valid_members, current_entries, conf["limits"], t_conf["type"], {"m_kumite_mode":m_mode, "w_kumite_mode":w_mode})
                 if errs:
                     has_error = True
@@ -671,13 +667,9 @@ def school_page(s_name):
                     time.sleep(1); st.rerun()
 
         st.markdown("---")
-        # Excelボタン (valid_members はここで定義済みなので安全)
         if st.button("📥 Excel申込書を作成する", type="primary"):
-             # 保存済みデータをロードしてチェック（保存時にもチェックしているが念のため）
              latest_entries = load_entries(active_tid)
              final_merged = get_merged_data(s_name, active_tid)
-             
-             # エラーチェックは保存時に通っているので、ここでは作成処理へ
              fp, msg = generate_excel(s_name, s_data, final_merged, active_tid, t_conf)
              if fp:
                  with open(fp, "rb") as f:
@@ -776,5 +768,33 @@ def admin_page():
         st.info("間違えて年度更新してしまった場合、ここから元に戻せます。")
         if st.button("バックアップから復元する"):
             res = restore_from_backup(); st.warning(res)
+
+# ---------------------------------------------------------
+# 8. Main (必須)
+# ---------------------------------------------------------
+def main():
+    st.set_page_config(page_title="大会エントリー", layout="wide")
+    qp = st.query_params
+    if "school" in qp: st.session_state["logged_in_school"] = qp["school"]
+    if "logged_in_school" in st.session_state:
+        st.query_params["school"] = st.session_state["logged_in_school"]
+        school_page(st.session_state["logged_in_school"]); return
+
+    st.title("🔐 エントリーシステム"); auth = load_auth()
+    t1, t2, t3 = st.tabs(["ログイン", "新規登録", "管理者"])
+    with t1:
+        s = st.selectbox("学校名", list(auth.keys()))
+        pw = st.text_input("パスワード", type="password")
+        if st.button("ログイン"):
+            if s in auth and auth[s]["password"] == pw:
+                st.session_state["logged_in_school"] = s; st.rerun()
+            else: st.error("パスワードが違います")
+    with t2:
+        n = st.text_input("学校名 (新規)"); p = st.text_input("校長名"); new_pw = st.text_input("パスワード (設定)", type="password")
+        if st.button("登録"):
+            if n and new_pw:
+                auth[n] = {"password": new_pw, "principal": p, "school_no": 999}
+                save_auth(auth); st.success("登録しました"); st.rerun()
+    with t3: admin_page()
 
 if __name__ == "__main__": main()
