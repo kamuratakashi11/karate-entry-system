@@ -266,12 +266,7 @@ def get_merged_data(school_name, tournament_id):
     def get_ent(row, key):
         uid = f"{row['school']}_{row['name']}"
         val = entries.get(uid, {}).get(key, None)
-        # 【4. 互換性維持コード】(あとで削除)
-        # 旧データを新データ形式に読み替える
-        if val == "一般": return "正"
-        if val == "正選手": return "正"
-        if val == "補欠": return "補"
-        return val
+        return val # 変換ロジックを削除しました
     
     cols_to_add = ["team_kata_chk", "team_kata_role", "team_kumi_chk", "team_kumi_role",
                    "kata_chk", "kata_val", "kata_rank", "kumi_chk", "kumi_val", "kumi_rank"]
@@ -299,13 +294,11 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta):
                 k_val = ent.get("kata_val")
                 if k_val == "補": cnt_ind_k_sub += 1
                 elif k_val == "正": cnt_ind_k_reg += 1 
-                # シードはカウントしない
                 
             if ent.get("kumi_chk"):
                 val = ent.get("kumi_val", "")
                 if val == "補": cnt_ind_ku_sub += 1
                 elif val == "正": cnt_ind_ku_reg += 1
-                # 階級制(新人)の場合の対応
                 elif t_type != "standard" and val and val != "出場しない" and val != "なし" and val != "シード" and val != "補":
                     cnt_ind_ku_reg += 1
 
@@ -524,13 +517,14 @@ def school_page(s_name):
                 uid = f"{r['school']}_{r['name']}"
                 name_style = 'background-color:#e8f5e9; color:#1b5e20; padding:2px 6px; border-radius:4px; font-weight:bold;' if r['sex'] == "男子" else 'background-color:#ffebee; color:#b71c1c; padding:2px 6px; border-radius:4px; font-weight:bold;'
                 
-                # 読み込み時、"正選手"->"正"などの変換は get_merged_data で完了済み
+                # 直結型: 保存されている値をそのままデフォルトに
                 def_tk = r.get("last_team_kata_role", "なし")
                 if not def_tk or def_tk not in ["正", "補"]: def_tk = "なし"
                 
                 def_tku = r.get("last_team_kumi_role", "なし")
                 if not def_tku or def_tku not in ["正", "補"]: def_tku = "なし"
                 
+                # 個人形も "シード" "正" "補" をそのまま受け入れる
                 def_k = r.get("last_kata_val", "なし")
                 if not def_k or def_k not in ["正", "補", "シード"]: def_k = "なし"
 
@@ -603,7 +597,7 @@ def school_page(s_name):
                 processed = {}
                 temp_processed = {}
                 for uid, raw in form_buffer.items():
-                    # 直結保存: UIの文字をそのままDBへ
+                    # 直結保存
                     tk_chk = (raw["val_tk"] != "なし")
                     tk_role = raw["val_tk"] if tk_chk else ""
                     
@@ -624,17 +618,17 @@ def school_page(s_name):
                     ku_rank = raw["rank_ku"]
 
                     name = uid.split('_')[1]
-                    # バリデーション: "正"の場合のみ順位必須
+                    # バリデーション
                     if k_chk and k_role == "正":
                         if not k_rank: st.error(f"❌ {name}さん: 個人形の順位が入力されていません。"); has_error = True
-                    elif not k_chk or k_role == "補": k_rank = ""
+                    elif not k_chk or k_role == "補" or k_role == "シード": k_rank = ""
 
                     if ku_chk:
                         is_reg = (t_conf["type"] == "weight" and ku_role != "補欠") or \
                                  (t_conf["type"] == "standard" and ku_role == "正")
                         if is_reg and not ku_rank: st.error(f"❌ {name}さん: 個人組手の順位が入力されていません。"); has_error = True
                     
-                    if not ku_chk or ku_role == "補": ku_rank = ""
+                    if not ku_chk or ku_role == "補" or ku_role == "シード": ku_rank = ""
 
                     temp_processed[uid] = {
                         "team_kata_chk": tk_chk, "team_kata_role": tk_role,
