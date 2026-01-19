@@ -100,7 +100,6 @@ def get_gsheet_client():
         creds = ServiceAccountCredentials.from_json_keyfile_name(KEY_FILE, scope)
     else:
         try:
-            # secretsが文字列でも辞書でも対応
             vals = st.secrets["gcp_key"]
             if isinstance(vals, str):
                 key_dict = json.loads(vals)
@@ -427,7 +426,7 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
     return fname, "作成成功"
 
 # ---------------------------------------------------------
-# 6. トーナメントデータ出力
+# 6. トーナメントデータ・集計表出力
 # ---------------------------------------------------------
 def generate_tournament_excel(all_data, t_type):
     output = io.BytesIO()
@@ -494,6 +493,130 @@ def generate_tournament_excel(all_data, t_type):
             
     return output.getvalue()
 
+def to_safe_int(val):
+    try:
+        s = to_half_width(str(val))
+        return int(s)
+    except:
+        return 999
+
+def generate_summary_excel(master_df, entries, auth_data, t_type):
+    summary_rows = []
+    
+    # 学校番号順にソート(安全版)
+    sorted_schools = sorted(auth_data.items(), key=lambda x: to_safe_int(x[1].get('school_no')))
+    
+    for s_name, s_auth in sorted_schools:
+        s_no = s_auth.get('school_no', '')
+        s_members = master_df[master_df['school'] == s_name]
+        
+        m_tk_flag = ""; m_tku_flag = ""
+        w_tk_flag = ""; w_tku_flag = ""
+        m_k_cnt = 0; m_ku_cnt = 0
+        w_k_cnt = 0; w_ku_cnt = 0
+        
+        reg_player_names = set()
+        
+        for _, r in s_members.iterrows():
+            uid = f"{s_name}_{r['name']}"
+            ent = entries.get(uid, {})
+            sex = r['sex']
+            
+            if sex == "男子":
+                if ent.get("team_kata_chk"): m_tk_flag = "○"
+                if ent.get("team_kumi_chk"): m_tku_flag = "○"
+            else:
+                if ent.get("team_kata_chk"): w_tk_flag = "○"
+                if ent.get("team_kumi_chk"): w_tku_flag = "○"
+            
+            # 個人カウント (正 or シード or 階級) -> 補欠以外
+            if ent.get("kata_chk"):
+                val = ent.get("kata_val")
+                if val and val != "補" and val != "なし" and val != "出場しない":
+                    if sex == "男子": m_k_cnt += 1
+                    else: w_k_cnt += 1
+            if ent.get("kumi_chk"):
+                val = ent.get("kumi_val")
+                if val and val != "補" and val != "なし" and val != "出場しない":
+                    if sex == "男子": m_ku_cnt += 1
+                    else: w_ku_cnt += 1
+            
+            # 正選手合計計算
+            is_reg = False
+            if ent.get("team_kata_chk") and ent.get("team_kata_role") == "正": is_reg = True
+            if ent.get("team_kumi_chk") and ent.get("team_kumi_role") == "正": is_reg = True
+            kv = ent.get("kata_val")
+            if ent.get("kata_chk") and kv and kv != "補" and kv != "なし" and kv != "出場しない": is_reg = True
+            kuv = ent.get("kumi_val")
+            if ent.get("kumi_chk") and kuv and kuv != "補" and kuv != "なし" and kuv != "出場しない": is_reg = True
+            
+            if is_reg:
+                reg_player_names.add(r['name'])
+
+        summary_rows.append({
+            "学校No": s_no,
+            "学校名": s_name,
+            "男団体形": m_tk_flag, "男団体組手": m_tku_flag,
+            "男個人形": m_k_cnt if m_k_cnt > 0 else "", "男個人組手": m_ku_cnt if m_ku_cnt > 0 else "",
+            "女団体形": w_tk_flag, "女団体組手": w_tku_flag,
+            "女個人形": w_k_cnt if w_k_cnt > 0 else "", "女個人組手": w_ku_cnt if w_ku_cnt > 0 else "",
+            "正選手合計": len(reg_player_names)
+        })
+        
+    df_out = pd.DataFrame(summary_rows)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_out.to_excel(writer, sheet_name="参加校一覧", index=False)
+    return output.getvalue()
+
+def generate_advisor_excel(schools_data, auth_data):
+    rows = []
+    # 学校番号順にソート(安全版)
+    sorted_schools = sorted(auth_data.items(), key=lambda x: to_safe_int(x[1].get('school_no')))
+    
+    cnt_judge = 0
+    cnt_staff = 0
+    
+    for s_name, s_auth in sorted_schools:
+        s_no = s_auth.get('school_no', '')
+        s_info = schools_data.get(s_name, {})
+        advs = s_info.get("advisors", [])
+        
+        for a in advs:
+            name = a.get("name", "")
+            if not name: continue
+            role = a.get("role", "審判")
+            d1 = "○" if a.get("d1") else "×"
+            d2 = "○" if a.get("d2") else "×"
+            
+            if role == "審判": cnt_judge += 1
+            if role == "係員": cnt_staff += 1
+            
+            rows.append({
+                "No": s_no,
+                "学校名": s_name,
+                "顧問氏名": name,
+                "役割": role,
+                "1日目": d1,
+                "2日目": d2
+            })
+            
+    df_list = pd.DataFrame(rows)
+    
+    # 1シート化：リストの右側に集計を表示
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_list.to_excel(writer, sheet_name="顧問一覧", index=False, startcol=0)
+        
+        # 集計表を作成して同じシートのH列あたりに書き込む
+        df_summary = pd.DataFrame([
+            {"項目": "審判 合計", "人数": cnt_judge},
+            {"項目": "係員 合計", "人数": cnt_staff}
+        ])
+        df_summary.to_excel(writer, sheet_name="顧問一覧", index=False, startcol=7) # H列=7
+        
+    return output.getvalue()
+
 # ---------------------------------------------------------
 # 7. UI
 # ---------------------------------------------------------
@@ -557,7 +680,7 @@ def school_page(s_name):
         
         valid_members = merged[merged['grade'].isin(target_grades)].sort_values(by=['sex_rank', 'grade_rank', 'name']).copy()
         
-        if valid_members.empty: st.warning("部員名簿が空です。"); return
+        if valid_members.empty: st.warning("部員名簿が空です。名簿タブから部員を登録してください。"); return
         
         entries_update = load_entries(active_tid)
         
@@ -729,35 +852,77 @@ def school_page(s_name):
 
     elif selected_view == "② 部員名簿":
         st.info("💡 ここは「全大会共通」の名簿です。")
+        
+        # 1. 新規追加フォーム
         with st.expander("👤 新しい部員を追加する", expanded=False):
             with st.form("add_member"):
                 c = st.columns(3)
                 nn = c[0].text_input("氏名")
-                ns = c[1].selectbox("性別", ["男子", "女子"])
+                # 性別選択: 初期値を空欄に
+                ns = c[1].selectbox("性別", ["", "男子", "女子"])
                 ng = c[2].selectbox("学年", [1, 2, 3])
                 c2 = st.columns(2)
                 nd = c2[0].text_input("生年月日")
                 nj = c2[1].text_input("JKF番号")
+                
                 if st.form_submit_button("追加"):
-                    if nn:
+                    if not nn:
+                        st.error("❌ 氏名を入力してください")
+                    elif not ns:
+                        st.error("❌ 性別を選択してください")
+                    else:
                         if "master_cache" in st.session_state: del st.session_state["master_cache"]
                         master = load_members_master()
                         new_row = pd.DataFrame([{"school":s_name, "name":nn, "sex":ns, "grade":ng, "dob":nd, "jkf_no":nj, "active":True}])
                         save_members_master(pd.concat([master, new_row], ignore_index=True))
                         st.success(f"{nn} さんを追加しました"); st.rerun()
+
+        st.divider()
+        st.markdown("##### 📝 名簿編集 (修正・削除)")
+        st.caption("※データを直接書き換えて「保存」ボタンを押してください。行を選んでDeleteキーで削除できます。")
+        
         master = load_members_master()
-        my_m = master[master['school']==s_name].reset_index()
-        if my_m.empty: st.warning("部員が登録されていません。")
-        else:
-            st.markdown("##### 登録済み部員リスト")
-            for i, r in my_m.iterrows():
-                c = st.columns([2, 1, 1, 1])
-                c[0].write(r['name'])
-                c[1].write(r['sex'])
-                c[2].write(f"{r['grade']}年")
-                if c[3].button("削除", key=f"mdel_{r['index']}"):
-                    if "master_cache" in st.session_state: del st.session_state["master_cache"]
-                    save_members_master(master.drop(r['index'])); st.rerun()
+        # この学校のデータだけ抽出
+        my_m = master[master['school']==s_name].copy()
+        
+        # エディタで編集
+        edited_df = st.data_editor(my_m[['name','sex','grade','dob','jkf_no','active']], num_rows="dynamic", use_container_width=True)
+        
+        if st.button("💾 修正を保存する", type="primary"):
+            # 保存処理: 他校のデータ + 編集後の自校データ
+            other_m = master[master['school']!=s_name]
+            # edited_dfにschool列を付与して結合
+            edited_df['school'] = s_name
+            new_master = pd.concat([other_m, edited_df], ignore_index=True)
+            
+            save_members_master(new_master)
+            st.success("✅ 名簿を更新しました"); time.sleep(1); st.rerun()
+
+        st.divider()
+        st.markdown("##### 📋 登録部員リスト (確認用)")
+        
+        # 編集後のデータをリロードして表示に使用
+        view_m = master[master['school']==s_name]
+        
+        # 左右分割表示 (左:男子 / 右:女子)
+        c_male, c_female = st.columns(2)
+        
+        with c_male:
+            st.markdown("###### 🚹 男子部員")
+            # 男子または性別不明なデータ (安全策)
+            m_df = view_m[view_m['sex'] != '女子'].sort_values(by=['grade', 'name'], ascending=[False, True])
+            if not m_df.empty:
+                st.dataframe(m_df[['grade','name','jkf_no']], hide_index=True, use_container_width=True)
+            else:
+                st.caption("登録なし")
+                
+        with c_female:
+            st.markdown("###### 🚺 女子部員")
+            w_df = view_m[view_m['sex'] == '女子'].sort_values(by=['grade', 'name'], ascending=[False, True])
+            if not w_df.empty:
+                st.dataframe(w_df[['grade','name','jkf_no']], hide_index=True, use_container_width=True)
+            else:
+                st.caption("登録なし")
 
     elif selected_view == "③ 顧問登録":
         c_p = st.columns([1, 2])
@@ -861,6 +1026,21 @@ def admin_page():
                 xlsx_data = generate_tournament_excel(full_data, t_type)
                 st.download_button("Excelダウンロード開始", xlsx_data, "tournament_entries.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
+        st.divider()
+        st.subheader("集計・運営資料出力")
+        
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            if st.button("📊 参加校一覧 (集計表)"):
+                if "schools_data" not in st.session_state: st.session_state.schools_data = load_schools()
+                xlsx = generate_summary_excel(master, entries, auth, t_type)
+                st.download_button("集計表ダウンロード", xlsx, "summary_participation.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        with col_r2:
+            if st.button("👔 顧問出欠リスト"):
+                if "schools_data" not in st.session_state: st.session_state.schools_data = load_schools()
+                xlsx = generate_advisor_excel(st.session_state.schools_data, auth)
+                st.download_button("顧問リストダウンロード", xlsx, "summary_advisors.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
     with t3:
         st.subheader("学校番号 & パスワード管理")
         with st.expander("🔑 管理者パスワード変更"):
@@ -872,47 +1052,39 @@ def admin_page():
                     save_conf(conf); st.success("変更しました。次回から新しいパスワードを使用してください。")
 
         st.markdown("---")
-        
-        # --- ここから修正部分 v1.22.3 ---
         st.markdown("#### アカウント一覧・編集")
         st.caption("※学校名自体を書き換えると、システム上は「古い学校を削除して新しい学校を追加」した扱いになります。")
         
-        # 1. 編集エリア (全リプレイス方式で名前変更に対応)
         s_list = []
         for k, v in auth.items():
             s_list.append({
                 "学校名": k, 
                 "No": v.get("school_no", 999), 
                 "Password": v.get("password", ""),
-                "校長名": v.get("principal", "") # 校長名も編集できるように追加
+                "校長名": v.get("principal", "") 
             })
             
-        edf = st.data_editor(pd.DataFrame(s_list), key="sed", num_rows="fixed") # 行追加は下の登録タブでやるのでfixed推奨
+        edf = st.data_editor(pd.DataFrame(s_list), key="sed", num_rows="fixed")
         
         if st.button("全データを保存 (修正を反映)"):
             new_auth = {}
             has_error = False
             for i, r in edf.iterrows():
                 s_name = str(r["学校名"]).strip()
-                if not s_name: continue # 空文字ガード
-                
+                if not s_name: continue
                 if len(str(r["Password"])) < 6:
                     st.error(f"❌ {s_name} のパスワードが短すぎます (6文字以上)"); has_error = True
-                
                 new_auth[s_name] = {
                     "school_no": int(r["No"]),
                     "password": str(r["Password"]),
                     "principal": str(r["校長名"])
                 }
-            
             if not has_error:
                 save_auth(new_auth)
                 st.success("✅ 保存しました！学校名の変更も反映されました。")
                 time.sleep(1); st.rerun()
 
         st.divider()
-        
-        # 2. 削除エリア (確認ダイアログ付き)
         with st.expander("🗑️ アカウント削除"):
             del_target = st.selectbox("削除する学校を選択", [""] + list(auth.keys()))
             if del_target:
@@ -923,7 +1095,6 @@ def admin_page():
                         save_auth(auth)
                         st.success(f"{del_target} を削除しました。")
                         time.sleep(1); st.rerun()
-        # --- 修正ここまで ---
             
     with t4:
         st.subheader("🌸 年度更新処理")
@@ -945,7 +1116,7 @@ def main():
         st.query_params["school"] = st.session_state["logged_in_school"]
         school_page(st.session_state["logged_in_school"]); return
 
-    st.title("🔐 埼玉県高体連空手道エントリーシステム"); auth = load_auth()
+    st.title("🥋埼玉県高体連空手道エントリーシステム"); auth = load_auth()
     t1, t2, t3 = st.tabs(["ログイン", "新規登録", "管理者"])
     with t1:
         s = st.selectbox("学校名", list(auth.keys()))
@@ -954,8 +1125,10 @@ def main():
             if s in auth and auth[s]["password"] == pw:
                 st.session_state["logged_in_school"] = s; st.rerun()
             else: st.error("パスワードが違います")
+        st.caption("※パスワードを忘れた場合は競技部長へ連絡をしてください。")
     with t2:
         n = st.text_input("学校名 (新規)"); p = st.text_input("校長名"); new_pw = st.text_input("パスワード (設定)", type="password")
+        st.caption("※パスワードは6文字以上で登録してください。")
         if st.button("登録"):
             if n and new_pw:
                 if len(new_pw) < 6: st.error("パスワードは6文字以上にしてください")
@@ -963,6 +1136,5 @@ def main():
                     auth[n] = {"password": new_pw, "principal": p, "school_no": 999}
                     save_auth(auth); st.success("登録しました"); st.rerun()
     with t3: admin_page()
-
 
 if __name__ == "__main__": main()
