@@ -100,7 +100,12 @@ def get_gsheet_client():
         creds = ServiceAccountCredentials.from_json_keyfile_name(KEY_FILE, scope)
     else:
         try:
-            key_dict = json.loads(st.secrets["gcp_key"])
+            # secretsが文字列でも辞書でも対応
+            vals = st.secrets["gcp_key"]
+            if isinstance(vals, str):
+                key_dict = json.loads(vals)
+            else:
+                key_dict = vals
             creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
         except Exception as e:
             st.error(f"認証設定エラー: {e}"); st.stop()
@@ -492,7 +497,6 @@ def generate_tournament_excel(all_data, t_type):
 # ---------------------------------------------------------
 # 7. UI
 # ---------------------------------------------------------
-# 全角→半角変換ヘルパー
 def to_half_width(text):
     if not text: return ""
     return text.translate(str.maketrans('０１２３４５６７８９', '0123456789')).strip()
@@ -670,7 +674,6 @@ def school_page(s_name):
                     
                     k_chk = (raw["val_k"] != "なし")
                     k_role = raw["val_k"] if k_chk else ""
-                    # 全角→半角変換
                     k_rank = to_half_width(raw["rank_k"])
                     
                     if t_conf["type"] == "standard":
@@ -680,14 +683,11 @@ def school_page(s_name):
                         ku_chk = (raw["ku_val"] != "出場しない")
                         ku_role = raw["ku_val"] if ku_chk else ""
                     
-                    # 全角→半角変換
                     ku_rank = to_half_width(raw["rank_ku"])
 
                     name = uid.split('_')[1]
-                    # バリデーション
                     if k_chk and k_role == "正":
                         if not k_rank: st.error(f"❌ {name}さん: 個人形の順位が入力されていません。"); has_error = True
-                    # 修正点: シードの場合は順位を消さない
                     elif not k_chk or k_role == "補": k_rank = ""
 
                     if ku_chk:
@@ -695,7 +695,6 @@ def school_page(s_name):
                                  (t_conf["type"] == "standard" and ku_role == "正")
                         if is_reg and not ku_rank: st.error(f"❌ {name}さん: 個人組手の順位が入力されていません。"); has_error = True
                     
-                    # 修正点: シードの場合は順位を消さない
                     if not ku_chk or ku_role == "補": ku_rank = ""
 
                     temp_processed[uid] = {
@@ -873,19 +872,58 @@ def admin_page():
                     save_conf(conf); st.success("変更しました。次回から新しいパスワードを使用してください。")
 
         st.markdown("---")
-        s_list = [{"学校名":k, "No":v.get("school_no",999), "Password": v.get("password","")} for k,v in auth.items()]
-        edf = st.data_editor(pd.DataFrame(s_list), key="sed", num_rows="fixed")
-        if st.button("学校情報を保存 (PW変更含む)"):
-            has_pw_error = False
+        
+        # --- ここから修正部分 v1.22.3 ---
+        st.markdown("#### アカウント一覧・編集")
+        st.caption("※学校名自体を書き換えると、システム上は「古い学校を削除して新しい学校を追加」した扱いになります。")
+        
+        # 1. 編集エリア (全リプレイス方式で名前変更に対応)
+        s_list = []
+        for k, v in auth.items():
+            s_list.append({
+                "学校名": k, 
+                "No": v.get("school_no", 999), 
+                "Password": v.get("password", ""),
+                "校長名": v.get("principal", "") # 校長名も編集できるように追加
+            })
+            
+        edf = st.data_editor(pd.DataFrame(s_list), key="sed", num_rows="fixed") # 行追加は下の登録タブでやるのでfixed推奨
+        
+        if st.button("全データを保存 (修正を反映)"):
+            new_auth = {}
+            has_error = False
             for i, r in edf.iterrows():
-                if r["学校名"] in auth:
-                    if len(str(r["Password"])) < 6:
-                        st.error(f"❌ {r['学校名']} のパスワードが短すぎます (6文字以上)"); has_pw_error = True
-                    else:
-                        auth[r["学校名"]]["school_no"] = int(r["No"])
-                        auth[r["学校名"]]["password"] = str(r["Password"])
-            if not has_pw_error:
-                save_auth(auth); st.success("保存しました")
+                s_name = str(r["学校名"]).strip()
+                if not s_name: continue # 空文字ガード
+                
+                if len(str(r["Password"])) < 6:
+                    st.error(f"❌ {s_name} のパスワードが短すぎます (6文字以上)"); has_error = True
+                
+                new_auth[s_name] = {
+                    "school_no": int(r["No"]),
+                    "password": str(r["Password"]),
+                    "principal": str(r["校長名"])
+                }
+            
+            if not has_error:
+                save_auth(new_auth)
+                st.success("✅ 保存しました！学校名の変更も反映されました。")
+                time.sleep(1); st.rerun()
+
+        st.divider()
+        
+        # 2. 削除エリア (確認ダイアログ付き)
+        with st.expander("🗑️ アカウント削除"):
+            del_target = st.selectbox("削除する学校を選択", [""] + list(auth.keys()))
+            if del_target:
+                st.warning(f"⚠️ 本当に「{del_target}」を削除しますか？")
+                if st.button(f"はい、{del_target} を削除します", type="primary"):
+                    if del_target in auth:
+                        del auth[del_target]
+                        save_auth(auth)
+                        st.success(f"{del_target} を削除しました。")
+                        time.sleep(1); st.rerun()
+        # --- 修正ここまで ---
             
     with t4:
         st.subheader("🌸 年度更新処理")
