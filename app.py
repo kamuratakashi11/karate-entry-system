@@ -134,7 +134,7 @@ def load_json(tab_name, default):
     try:
         ws = get_worksheet_safe(tab_name)
         val = ws.acell('A1').value
-        # 修正: valがNone, 空文字, または json.loadsの結果がNoneの場合もdefaultを返す
+        # 防波堤: Noneや空文字対策
         if not val: return default
         parsed = json.loads(val)
         return parsed if parsed is not None else default
@@ -171,7 +171,7 @@ def load_entries(tournament_id):
         ws = get_worksheet_safe(f"entry_{tournament_id}")
         val = ws.acell('A1').value
         data = json.loads(val) if val else {}
-        if data is None: data = {} # 安全策
+        if data is None: data = {}
     except: data = {}
     st.session_state[f"entry_cache_{tournament_id}"] = data
     return data
@@ -194,7 +194,7 @@ def load_conf():
         "admin_password": "1234"
     }
     data = load_json("config", default_conf)
-    # データ破損時の自己修復
+    # 欠損値の補完
     if "limits" not in data: data["limits"] = DEFAULT_LIMITS
     if "tournaments" not in data: data["tournaments"] = DEFAULT_TOURNAMENTS
     if "year" not in data: data["year"] = "6"
@@ -204,7 +204,7 @@ def load_conf():
 def save_conf(d): save_json("config", d)
 
 # ---------------------------------------------------------
-# 4. ロジック (バックアップ・復元・更新)
+# 4. ロジック
 # ---------------------------------------------------------
 def create_backup():
     df = load_members_master()
@@ -275,7 +275,6 @@ def get_merged_data(school_name, tournament_id):
         my_members[f"last_{c}"] = my_members.apply(lambda r: get_ent(r, c), axis=1)
     return my_members
 
-# 厳格な人数チェック (保存時にも使用)
 def validate_counts(members_df, entries_data, limits, t_type, school_meta):
     errs = []
     for sex in ["男子", "女子"]:
@@ -543,11 +542,18 @@ def school_page(s_name):
                 if t_conf["type"] == "standard":
                     w_list = ["出場しない", "一般", "シード", "補欠"]
                 
-                def_val = r.get("last_kumi_val", "出場しない")
-                if def_val not in w_list:
-                     if def_val in ["一般","シード","補欠"] and t_conf["type"] == "weight": def_val = "出場しない" 
-                     elif "kg" in def_val and t_conf["type"] == "standard": def_val = "出場しない"
-                     elif t_conf["type"] == "weight" and def_val!="出場しない": def_val = f"{def_val}kg級"
+                # --- 防波堤処理（サニタイズ）---
+                raw_kumi = r.get("last_kumi_val")
+                if raw_kumi is None or pd.isna(raw_kumi):
+                    def_val = "出場しない"
+                else:
+                    def_val = str(raw_kumi) # 文字列化
+                
+                # 安全な状態にしてから条件判定
+                if "kg" in def_val and t_conf["type"] == "standard": 
+                    def_val = "出場しない"
+                elif t_conf["type"] == "weight" and def_val not in w_list and def_val != "補欠" and def_val != "出場しない": 
+                    def_val = f"{def_val}kg級"
 
                 try: idx = w_list.index(def_val)
                 except: idx = 0
