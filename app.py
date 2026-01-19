@@ -945,7 +945,7 @@ def main():
         st.query_params["school"] = st.session_state["logged_in_school"]
         school_page(st.session_state["logged_in_school"]); return
 
-    st.title("🔐 エントリーシステム"); auth = load_auth()
+    st.title("🔐 埼玉県高体連空手道エントリーシステム"); auth = load_auth()
     t1, t2, t3 = st.tabs(["ログイン", "新規登録", "管理者"])
     with t1:
         s = st.selectbox("学校名", list(auth.keys()))
@@ -963,5 +963,6 @@ def main():
                     auth[n] = {"password": new_pw, "principal": p, "school_no": 999}
                     save_auth(auth); st.success("登録しました"); st.rerun()
     with t3: admin_page()
+
 
 if __name__ == "__main__": main()
