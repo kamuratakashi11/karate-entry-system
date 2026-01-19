@@ -603,7 +603,7 @@ def school_page(s_name):
                 try: idx = w_list.index(def_val)
                 except: idx = 0
                 ku_val = c4a.selectbox("階級", w_list, index=idx, key=f"sel_ku_{uid}", label_visibility="collapsed")
-                ku_rank = c4b.text_input("順位", r.get("last_kumi_rank",""), key=f"rk_ku_{uid}", label_visibility="collapsed", placeholder="順位")
+                rank_ku = c4b.text_input("順位", r.get("last_kumi_rank",""), key=f"rk_ku_{uid}", label_visibility="collapsed", placeholder="順位")
 
                 form_buffer[uid] = {
                     "val_tk": val_tk, "val_tku": val_tku, 
