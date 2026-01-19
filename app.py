@@ -857,7 +857,7 @@ def school_page(s_name):
                 entries_update[meta_key] = school_meta
 
         with st.form("entry_form_unified"):
-            cols = st.columns([2.0, 2.0, 2.0, 0.2, 2.2, 3.2])
+            cols = st.columns([2.0, 2.0, 2.0, 0, 2.8, 2.8])
             cols[0].markdown("**氏名**")
             cols[1].markdown("**団体形**")
             cols[2].markdown("**団体組手**")
@@ -879,7 +879,7 @@ def school_page(s_name):
                 def_k = r.get("last_kata_val", "なし")
                 if not def_k or def_k not in ["正", "補", "シード"]: def_k = "なし"
 
-                c = st.columns([2.0, 2.0, 2.0, 0.2, 2.2, 3.2])
+                c = st.columns([2.0, 2.0, 2.0, 0, 2.8, 2.8])
                 c[0].markdown(f'<span style="{name_style}">{r["grade"]}年 {r["name"]}</span>', unsafe_allow_html=True)
                 
                 opts_tk = ["なし", "正", "補"]
@@ -1191,5 +1191,6 @@ def main():
                     auth[n] = {"password": new_pw, "principal": p, "school_no": 999}
                     save_auth(auth); st.success("登録しました"); st.rerun()
     with t3: admin_page()
+
 
 if __name__ == "__main__": main()
