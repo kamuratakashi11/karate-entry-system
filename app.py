@@ -759,6 +759,7 @@ def school_page(s_name):
         st.divider()
         st.markdown("##### 📝 名簿編集 (修正・削除)")
         st.caption("※データを直接書き換えて「保存」ボタンを押してください。行を選んでDeleteキーで削除できます。")
+        st.warning("⚠️ **重要**：氏名を修正すると、その選手の大会エントリー情報はリセット（紐付け解除）されます。修正後は必ず「③ 大会エントリー」画面で入力をし直してください。")
         
         master = load_members_master()
         my_m = master[master['school']==s_name].copy()
