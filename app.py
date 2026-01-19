@@ -299,7 +299,7 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta):
                 elif k_val == "正": cnt_ind_k_reg += 1 
                 
             if ent.get("kumi_chk"):
-                val = ent.get("kumi_val", "")
+                val = ent.get("kumi_val")
                 if val == "補": cnt_ind_ku_sub += 1
                 elif val == "正": cnt_ind_ku_reg += 1
                 elif t_type != "standard" and val and val != "出場しない" and val != "なし" and val != "シード" and val != "補":
@@ -603,22 +603,19 @@ def generate_advisor_excel(schools_data, auth_data):
             
     df_list = pd.DataFrame(rows)
     
-    # 1シート化：リストの右側に集計を表示
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_list.to_excel(writer, sheet_name="顧問一覧", index=False, startcol=0)
-        
-        # 集計表を作成して同じシートのH列あたりに書き込む
         df_summary = pd.DataFrame([
             {"項目": "審判 合計", "人数": cnt_judge},
             {"項目": "係員 合計", "人数": cnt_staff}
         ])
-        df_summary.to_excel(writer, sheet_name="顧問一覧", index=False, startcol=7) # H列=7
+        df_summary.to_excel(writer, sheet_name="顧問一覧", index=False, startcol=7)
         
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 7. UI
+# 8. UI
 # ---------------------------------------------------------
 def to_half_width(text):
     if not text: return ""
@@ -660,16 +657,147 @@ def school_page(s_name):
     if "schools_data" not in st.session_state: st.session_state.schools_data = load_schools()
     s_data = st.session_state.schools_data.get(s_name, {"principal":"", "advisors":[]})
     
-    if "current_view" not in st.session_state: st.session_state["current_view"] = "① 大会エントリー"
+    # メニュー順序・名称変更
+    if "current_view" not in st.session_state: st.session_state["current_view"] = "① 顧問登録"
 
-    menu = ["① 大会エントリー", "② 部員名簿", "③ 顧問登録"]
+    menu = ["① 顧問登録", "② 部員名簿登録", "③ 大会エントリー"]
+    
+    # 以前のセッション値が残っていた場合の安全策
     try: idx = menu.index(st.session_state["current_view"])
     except: idx = 0
+    
     selected_view = st.radio("メニュー選択", menu, index=idx, horizontal=True, label_visibility="collapsed")
     st.session_state["current_view"] = selected_view
     st.markdown("---")
 
-    if selected_view == "① 大会エントリー":
+    # --- ビュー分岐 ---
+    
+    if selected_view == "① 顧問登録":
+        c_p = st.columns([1, 2])
+        np = c_p[0].text_input("校長名", s_data.get("principal", ""))
+        st.markdown("#### 顧問リスト")
+        advs = s_data.get("advisors", [])
+        
+        # 顧問リストのループ
+        for i, a in enumerate(advs):
+            with st.container():
+                c = st.columns([0.8, 2, 1.5, 0.5, 0.5, 0.7])
+                if i == 0: c[0].info("筆頭顧問")
+                else: c[0].caption("顧問")
+                a["name"] = c[1].text_input("氏名", a["name"], key=f"n{i}", label_visibility="collapsed", placeholder="氏名")
+                a["role"] = c[2].selectbox("役割", ["審判","競技記録","係員"], index=["審判","競技記録","係員"].index(a.get("role","審判")), key=f"r{i}", label_visibility="collapsed")
+                
+                # ここに注意書きを入れるのはレイアウト的に厳しいので、リストの上に入れる
+                # チェックボックス
+                c[3].caption("1日目"); a["d1"] = c[3].checkbox("1日目", a.get("d1"), key=f"d1{i}", label_visibility="collapsed")
+                c[4].caption("2日目"); a["d2"] = c[4].checkbox("2日目", a.get("d2"), key=f"d2{i}", label_visibility="collapsed")
+                
+                if c[5].button("削除", key=f"del_{i}"):
+                    advs.pop(i)
+                    s_data["advisors"] = advs
+                    save_schools(st.session_state.schools_data); st.rerun()
+        
+        # 顧問出席の注意書きを、リストの直前ではなくボタンの近くや、わかりやすい位置に配置
+        st.caption("※顧問出席（参加する日にチェックを入れてください）")
+
+        if st.button("＋ 顧問を追加"):
+            advs.append({"name":"", "role":"審判", "d1":True, "d2":True})
+            s_data["advisors"] = advs
+            save_schools(st.session_state.schools_data); st.rerun()
+        if st.button("顧問情報を保存", type="primary"):
+            s_data["principal"] = np; s_data["advisors"] = advs
+            st.session_state.schools_data[s_name] = s_data
+            save_schools(st.session_state.schools_data); st.success("保存しました")
+
+    elif selected_view == "② 部員名簿登録":
+        st.info("💡 ここは「全大会共通」の名簿です。")
+        
+        # 1. 新規追加フォーム
+        with st.expander("👤 新しい部員を追加する", expanded=False):
+            with st.form("add_member"):
+                c = st.columns(3)
+                nn = c[0].text_input("氏名")
+                # 性別選択: 初期値を空欄に
+                ns = c[1].selectbox("性別", ["", "男子", "女子"])
+                ng = c[2].selectbox("学年", [1, 2, 3])
+                c2 = st.columns(2)
+                nd = c2[0].text_input("生年月日")
+                nj = c2[1].text_input("JKF番号")
+                
+                if st.form_submit_button("追加"):
+                    if not nn:
+                        st.error("❌ 氏名を入力してください")
+                    elif not ns:
+                        st.error("❌ 性別を選択してください")
+                    else:
+                        if "master_cache" in st.session_state: del st.session_state["master_cache"]
+                        master = load_members_master()
+                        new_row = pd.DataFrame([{"school":s_name, "name":nn, "sex":ns, "grade":ng, "dob":nd, "jkf_no":nj, "active":True}])
+                        save_members_master(pd.concat([master, new_row], ignore_index=True))
+                        st.success(f"{nn} さんを追加しました"); st.rerun()
+
+        st.divider()
+        st.markdown("##### 📝 名簿編集 (修正・削除)")
+        st.caption("※データを直接書き換えて「保存」ボタンを押してください。行を選んでDeleteキーで削除できます。")
+        
+        master = load_members_master()
+        my_m = master[master['school']==s_name].copy()
+        
+        # エディタ設定 (日本語化 & active隠し)
+        col_config = {
+            "name": st.column_config.TextColumn("氏名"),
+            "sex": st.column_config.SelectboxColumn("性別", options=["男子", "女子"]),
+            "grade": st.column_config.NumberColumn("学年"),
+            "dob": st.column_config.TextColumn("生年月日"),
+            "jkf_no": st.column_config.TextColumn("JKF番号")
+        }
+        
+        # active列を除外して表示
+        df_to_edit = my_m[['name','sex','grade','dob','jkf_no']]
+        edited_df = st.data_editor(df_to_edit, column_config=col_config, num_rows="dynamic", use_container_width=True)
+        
+        if st.button("💾 修正を保存する", type="primary"):
+            other_m = master[master['school']!=s_name]
+            # active列を復元 (デフォルトTrue)
+            edited_df['active'] = True
+            edited_df['school'] = s_name
+            # 元の並び順(columns)に戻す
+            edited_df = edited_df[master.columns]
+            
+            new_master = pd.concat([other_m, edited_df], ignore_index=True)
+            save_members_master(new_master)
+            st.success("✅ 名簿を更新しました"); time.sleep(1); st.rerun()
+
+        st.divider()
+        st.markdown("##### 📋 登録部員リスト (確認用)")
+        
+        view_m = master[master['school']==s_name]
+        c_male, c_female = st.columns(2)
+        
+        with c_male:
+            st.markdown("###### 🚹 男子部員")
+            m_df = view_m[view_m['sex'] != '女子'].sort_values(by=['grade', 'name'], ascending=[False, True])
+            if not m_df.empty:
+                # 日本語ヘッダーで表示
+                st.dataframe(
+                    m_df[['grade','name','jkf_no']], 
+                    column_config={"grade":"学年", "name":"氏名", "jkf_no":"JKF番号"},
+                    hide_index=True, use_container_width=True
+                )
+            else: st.caption("登録なし")
+                
+        with c_female:
+            st.markdown("###### 🚺 女子部員")
+            w_df = view_m[view_m['sex'] == '女子'].sort_values(by=['grade', 'name'], ascending=[False, True])
+            if not w_df.empty:
+                st.dataframe(
+                    w_df[['grade','name','jkf_no']], 
+                    column_config={"grade":"学年", "name":"氏名", "jkf_no":"JKF番号"},
+                    hide_index=True, use_container_width=True
+                )
+            else: st.caption("登録なし")
+
+    elif selected_view == "③ 大会エントリー":
         target_grades = [int(g) for g in t_conf['grades']]
         st.markdown(f"**出場対象学年:** {target_grades} 年生  \n<small>※順位のところは、シード順位を入れてください。シードでない場合は出場選手の優先順位を入れてください。優先順位をもとにトーナメントは組まれます。</small>", unsafe_allow_html=True)
         
@@ -680,7 +808,7 @@ def school_page(s_name):
         
         valid_members = merged[merged['grade'].isin(target_grades)].sort_values(by=['sex_rank', 'grade_rank', 'name']).copy()
         
-        if valid_members.empty: st.warning("部員名簿が空です。名簿タブから部員を登録してください。"); return
+        if valid_members.empty: st.warning("エントリー可能な部員がいません。「② 部員名簿登録」から登録してください。"); return
         
         entries_update = load_entries(active_tid)
         
@@ -850,107 +978,6 @@ def school_page(s_name):
                      st.download_button("📥 ダウンロード開始", f, fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
              else: st.error(msg)
 
-    elif selected_view == "② 部員名簿":
-        st.info("💡 ここは「全大会共通」の名簿です。")
-        
-        # 1. 新規追加フォーム
-        with st.expander("👤 新しい部員を追加する", expanded=False):
-            with st.form("add_member"):
-                c = st.columns(3)
-                nn = c[0].text_input("氏名")
-                # 性別選択: 初期値を空欄に
-                ns = c[1].selectbox("性別", ["", "男子", "女子"])
-                ng = c[2].selectbox("学年", [1, 2, 3])
-                c2 = st.columns(2)
-                nd = c2[0].text_input("生年月日")
-                nj = c2[1].text_input("JKF番号")
-                
-                if st.form_submit_button("追加"):
-                    if not nn:
-                        st.error("❌ 氏名を入力してください")
-                    elif not ns:
-                        st.error("❌ 性別を選択してください")
-                    else:
-                        if "master_cache" in st.session_state: del st.session_state["master_cache"]
-                        master = load_members_master()
-                        new_row = pd.DataFrame([{"school":s_name, "name":nn, "sex":ns, "grade":ng, "dob":nd, "jkf_no":nj, "active":True}])
-                        save_members_master(pd.concat([master, new_row], ignore_index=True))
-                        st.success(f"{nn} さんを追加しました"); st.rerun()
-
-        st.divider()
-        st.markdown("##### 📝 名簿編集 (修正・削除)")
-        st.caption("※データを直接書き換えて「保存」ボタンを押してください。行を選んでDeleteキーで削除できます。")
-        
-        master = load_members_master()
-        # この学校のデータだけ抽出
-        my_m = master[master['school']==s_name].copy()
-        
-        # エディタで編集
-        edited_df = st.data_editor(my_m[['name','sex','grade','dob','jkf_no','active']], num_rows="dynamic", use_container_width=True)
-        
-        if st.button("💾 修正を保存する", type="primary"):
-            # 保存処理: 他校のデータ + 編集後の自校データ
-            other_m = master[master['school']!=s_name]
-            # edited_dfにschool列を付与して結合
-            edited_df['school'] = s_name
-            new_master = pd.concat([other_m, edited_df], ignore_index=True)
-            
-            save_members_master(new_master)
-            st.success("✅ 名簿を更新しました"); time.sleep(1); st.rerun()
-
-        st.divider()
-        st.markdown("##### 📋 登録部員リスト (確認用)")
-        
-        # 編集後のデータをリロードして表示に使用
-        view_m = master[master['school']==s_name]
-        
-        # 左右分割表示 (左:男子 / 右:女子)
-        c_male, c_female = st.columns(2)
-        
-        with c_male:
-            st.markdown("###### 🚹 男子部員")
-            # 男子または性別不明なデータ (安全策)
-            m_df = view_m[view_m['sex'] != '女子'].sort_values(by=['grade', 'name'], ascending=[False, True])
-            if not m_df.empty:
-                st.dataframe(m_df[['grade','name','jkf_no']], hide_index=True, use_container_width=True)
-            else:
-                st.caption("登録なし")
-                
-        with c_female:
-            st.markdown("###### 🚺 女子部員")
-            w_df = view_m[view_m['sex'] == '女子'].sort_values(by=['grade', 'name'], ascending=[False, True])
-            if not w_df.empty:
-                st.dataframe(w_df[['grade','name','jkf_no']], hide_index=True, use_container_width=True)
-            else:
-                st.caption("登録なし")
-
-    elif selected_view == "③ 顧問登録":
-        c_p = st.columns([1, 2])
-        np = c_p[0].text_input("校長名", s_data.get("principal", ""))
-        st.markdown("#### 顧問リスト")
-        advs = s_data.get("advisors", [])
-        for i, a in enumerate(advs):
-            with st.container():
-                c = st.columns([0.8, 2, 1.5, 0.5, 0.5, 0.7])
-                if i == 0: c[0].info("筆頭顧問")
-                else: c[0].caption("顧問")
-                a["name"] = c[1].text_input("氏名", a["name"], key=f"n{i}", label_visibility="collapsed", placeholder="氏名")
-                a["role"] = c[2].selectbox("役割", ["審判","競技記録","係員"], index=["審判","競技記録","係員"].index(a.get("role","審判")), key=f"r{i}", label_visibility="collapsed")
-                a["d1"] = c[3].checkbox("1日目", a.get("d1"), key=f"d1{i}")
-                a["d2"] = c[4].checkbox("2日目", a.get("d2"), key=f"d2{i}")
-                if c[5].button("削除", key=f"del_{i}"):
-                    advs.pop(i)
-                    s_data["advisors"] = advs
-                    save_schools(st.session_state.schools_data); st.rerun()
-        if st.button("＋ 顧問を追加"):
-            advs.append({"name":"", "role":"審判", "d1":True, "d2":True})
-            s_data["advisors"] = advs
-            save_schools(st.session_state.schools_data); st.rerun()
-        if st.button("顧問情報を保存", type="primary"):
-            s_data["principal"] = np; s_data["advisors"] = advs
-            st.session_state.schools_data[s_name] = s_data
-            save_schools(st.session_state.schools_data); st.success("保存しました")
-
 def admin_page():
     st.title("🔧 管理者画面")
     conf = load_conf()
@@ -1116,9 +1143,10 @@ def main():
         st.query_params["school"] = st.session_state["logged_in_school"]
         school_page(st.session_state["logged_in_school"]); return
 
-    st.title("🥋埼玉県高体連空手道エントリーシステム"); auth = load_auth()
+    st.title("埼玉県高体連空手道エントリーシステム"); auth = load_auth()
     t1, t2, t3 = st.tabs(["ログイン", "新規登録", "管理者"])
     with t1:
+        st.info("💡 初めての人は「新規登録」タブから登録してください。")
         s = st.selectbox("学校名", list(auth.keys()))
         pw = st.text_input("パスワード", type="password")
         if st.button("ログイン"):
