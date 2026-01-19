@@ -25,7 +25,7 @@ except ImportError:
 # ---------------------------------------------------------
 KEY_FILE = 'secrets.json'
 SHEET_NAME = 'tournament_db'
-# ※ ADMIN_PASSWORD 定数は廃止し、configから読み込む仕様に変更
+# ADMIN_PASSWORD は load_conf() で管理
 
 # 大会設定
 DEFAULT_TOURNAMENTS = {
@@ -134,7 +134,10 @@ def load_json(tab_name, default):
     try:
         ws = get_worksheet_safe(tab_name)
         val = ws.acell('A1').value
-        return json.loads(val) if val else default
+        # 修正: valがNone, 空文字, または json.loadsの結果がNoneの場合もdefaultを返す
+        if not val: return default
+        parsed = json.loads(val)
+        return parsed if parsed is not None else default
     except: return default
 
 def save_json(tab_name, data):
@@ -168,6 +171,7 @@ def load_entries(tournament_id):
         ws = get_worksheet_safe(f"entry_{tournament_id}")
         val = ws.acell('A1').value
         data = json.loads(val) if val else {}
+        if data is None: data = {} # 安全策
     except: data = {}
     st.session_state[f"entry_cache_{tournament_id}"] = data
     return data
@@ -183,14 +187,14 @@ def load_schools(): return load_json("schools", {})
 def save_schools(d): save_json("schools", d)
 
 def load_conf():
-    # v1.20.0: admin_password を設定に追加 (初期値: "1234")
     default_conf = {
         "year": "6", 
         "tournaments": DEFAULT_TOURNAMENTS, 
         "limits": DEFAULT_LIMITS,
-        "admin_password": "1234" 
+        "admin_password": "1234"
     }
     data = load_json("config", default_conf)
+    # データ破損時の自己修復
     if "limits" not in data: data["limits"] = DEFAULT_LIMITS
     if "tournaments" not in data: data["tournaments"] = DEFAULT_TOURNAMENTS
     if "year" not in data: data["year"] = "6"
@@ -200,7 +204,7 @@ def load_conf():
 def save_conf(d): save_json("config", d)
 
 # ---------------------------------------------------------
-# 4. ロジック (バックアップ・復元・更新・ソート)
+# 4. ロジック (バックアップ・復元・更新)
 # ---------------------------------------------------------
 def create_backup():
     df = load_members_master()
@@ -271,6 +275,7 @@ def get_merged_data(school_name, tournament_id):
         my_members[f"last_{c}"] = my_members.apply(lambda r: get_ent(r, c), axis=1)
     return my_members
 
+# 厳格な人数チェック (保存時にも使用)
 def validate_counts(members_df, entries_data, limits, t_type, school_meta):
     errs = []
     for sex in ["男子", "女子"]:
@@ -363,7 +368,6 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
         safe_write(ws, c["d2"], "○" if a.get("d2") else "×", True)
     
     cols = coords["cols"]
-    # Excel出力用ソート (男子->女子、学年降順)
     members_df['sex_rank'] = members_df['sex'].map({'男子': 0, '女子': 1})
     members_df['grade_rank'] = members_df['grade'].map({3: 0, 2: 1, 1: 2})
     entries = members_df[
@@ -444,7 +448,6 @@ def school_page(s_name):
     
     if "current_view" not in st.session_state: st.session_state["current_view"] = "① 大会エントリー"
 
-    # UI改善: 並び順変更
     menu = ["① 大会エントリー", "② 部員名簿", "③ 顧問登録"]
     try: idx = menu.index(st.session_state["current_view"])
     except: idx = 0
@@ -452,13 +455,11 @@ def school_page(s_name):
     st.session_state["current_view"] = selected_view
     st.markdown("---")
 
-    # --- ① 大会エントリー ---
     if selected_view == "① 大会エントリー":
         target_grades = [int(g) for g in t_conf['grades']]
         st.markdown(f"**出場対象学年:** {target_grades} 年生")
         merged = get_merged_data(s_name, active_tid)
         
-        # ソートロジック強化: 男子(3->2->1) -> 女子(3->2->1)
         merged['sex_rank'] = merged['sex'].map({'男子': 0, '女子': 1})
         merged['grade_rank'] = merged['grade'].map({3: 0, 2: 1, 1: 2})
         
@@ -617,7 +618,6 @@ def school_page(s_name):
                      st.download_button("📥 ダウンロード開始", f, fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
              else: st.error(msg)
 
-    # --- ② 部員名簿 ---
     elif selected_view == "② 部員名簿":
         st.info("💡 ここは「全大会共通」の名簿です。")
         with st.expander("👤 新しい部員を追加する", expanded=False):
@@ -650,7 +650,6 @@ def school_page(s_name):
                     if "master_cache" in st.session_state: del st.session_state["master_cache"]
                     save_members_master(master.drop(r['index'])); st.rerun()
 
-    # --- ③ 顧問登録 ---
     elif selected_view == "③ 顧問登録":
         c_p = st.columns([1, 2])
         np = c_p[0].text_input("校長名", s_data.get("principal", ""))
@@ -678,18 +677,13 @@ def school_page(s_name):
             st.session_state.schools_data[s_name] = s_data
             save_schools(st.session_state.schools_data); st.success("保存しました")
 
-# ---------------------------------------------------------
-# 7. UI: 管理者ページ
-# ---------------------------------------------------------
 def admin_page():
     st.title("🔧 管理者画面")
-    
     conf = load_conf()
     current_admin_pw = conf.get("admin_password", "1234")
-    
     input_pw = st.text_input("Admin Password", type="password")
     if input_pw != current_admin_pw:
-        return # パスワード不一致なら何も表示しない
+        return 
 
     auth = load_auth()
     t1, t2, t3, t4 = st.tabs(["🏆 大会設定", "📥 データ出力", "🏫 アカウント", "📅 年次処理"])
@@ -758,8 +752,6 @@ def admin_page():
 
     with t3:
         st.subheader("学校番号 & パスワード管理")
-        
-        # 1. 管理者PW変更
         with st.expander("🔑 管理者パスワード変更"):
             new_admin_pw = st.text_input("新しい管理者パスワード", type="password")
             if st.button("管理者パスワードを変更"):
@@ -768,7 +760,6 @@ def admin_page():
                     conf["admin_password"] = new_admin_pw
                     save_conf(conf); st.success("変更しました。次回から新しいパスワードを使用してください。")
 
-        # 2. 学校アカウント管理
         st.markdown("---")
         s_list = [{"学校名":k, "No":v.get("school_no",999), "Password": v.get("password","")} for k,v in auth.items()]
         edf = st.data_editor(pd.DataFrame(s_list), key="sed", num_rows="fixed")
@@ -781,7 +772,6 @@ def admin_page():
                     else:
                         auth[r["学校名"]]["school_no"] = int(r["No"])
                         auth[r["学校名"]]["password"] = str(r["Password"])
-            
             if not has_pw_error:
                 save_auth(auth); st.success("保存しました")
             
@@ -791,16 +781,12 @@ def admin_page():
         col_act1, col_act2 = st.columns(2)
         if col_act1.button("新年度を開始する (実行確認)"):
             res = perform_year_rollover(); st.success(res)
-        
         st.markdown("---")
         st.subheader("⏪ 復元 (Undo)")
         st.info("間違えて年度更新してしまった場合、ここから元に戻せます。")
         if st.button("バックアップから復元する"):
             res = restore_from_backup(); st.warning(res)
 
-# ---------------------------------------------------------
-# 8. Main
-# ---------------------------------------------------------
 def main():
     st.set_page_config(page_title="大会エントリー", layout="wide")
     qp = st.query_params
