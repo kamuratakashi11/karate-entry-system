@@ -27,6 +27,9 @@ KEY_FILE = 'secrets.json'
 SHEET_NAME = 'tournament_db'
 # ADMIN_PASSWORD は load_conf() で管理
 
+# システムで管理する正当な列定義 (KeyError対策)
+MEMBERS_COLS = ["school", "name", "sex", "grade", "dob", "jkf_no", "active"]
+
 # 大会設定
 DEFAULT_TOURNAMENTS = {
     "kantou": {
@@ -149,14 +152,25 @@ def save_json(tab_name, data):
 
 def load_members_master():
     if "master_cache" in st.session_state: return st.session_state["master_cache"]
-    cols = ["school", "name", "sex", "grade", "dob", "jkf_no", "active"]
     try:
         recs = get_worksheet_safe("members").get_all_records()
-        df = pd.DataFrame(recs) if recs else pd.DataFrame(columns=cols)
+        # 取得データが空、または列が足りない場合のガード
+        if not recs:
+             df = pd.DataFrame(columns=MEMBERS_COLS)
+        else:
+             df = pd.DataFrame(recs)
+             # 不足カラムがあれば補完
+             for c in MEMBERS_COLS:
+                 if c not in df.columns: df[c] = ""
     except:
-        return pd.DataFrame(columns=cols)
+        return pd.DataFrame(columns=MEMBERS_COLS)
+        
     df['grade'] = pd.to_numeric(df['grade'], errors='coerce').fillna(0).astype(int)
     df['jkf_no'] = df['jkf_no'].astype(str)
+    
+    # 必要な列だけに絞る（余計な列を除去）
+    df = df[MEMBERS_COLS]
+    
     st.session_state["master_cache"] = df
     return df
 
@@ -164,8 +178,15 @@ def save_members_master(df):
     ws = get_worksheet_safe("members"); ws.clear()
     df = df.fillna("")
     df['jkf_no'] = df['jkf_no'].astype(str)
-    ws.update([df.columns.tolist()] + df.astype(str).values.tolist())
-    st.session_state["master_cache"] = df
+    
+    # 【重要】保存直前に、システム定義列のみに絞り込む（KeyError回避の要）
+    # もしdfに余計な列があっても無視、足りなければ空文字で作成
+    for c in MEMBERS_COLS:
+        if c not in df.columns: df[c] = ""
+    df_to_save = df[MEMBERS_COLS]
+
+    ws.update([df_to_save.columns.tolist()] + df_to_save.astype(str).values.tolist())
+    st.session_state["master_cache"] = df_to_save
 
 def load_entries(tournament_id):
     if f"entry_cache_{tournament_id}" in st.session_state:
@@ -214,7 +235,13 @@ def create_backup():
     ws_bk_mem.clear()
     df = df.fillna("")
     df['jkf_no'] = df['jkf_no'].astype(str)
-    ws_bk_mem.update([df.columns.tolist()] + df.astype(str).values.tolist())
+    
+    # バックアップ時も列を厳格化
+    for c in MEMBERS_COLS:
+        if c not in df.columns: df[c] = ""
+    df_bk = df[MEMBERS_COLS]
+    
+    ws_bk_mem.update([df_bk.columns.tolist()] + df_bk.astype(str).values.tolist())
     
     conf = load_conf()
     ws_bk_conf = get_worksheet_safe("config_backup")
@@ -224,7 +251,7 @@ def restore_from_backup():
     try:
         ws_bk_mem = get_worksheet_safe("members_backup")
         recs = ws_bk_mem.get_all_records()
-        df = pd.DataFrame(recs) if recs else pd.DataFrame()
+        df = pd.DataFrame(recs) if recs else pd.DataFrame(columns=MEMBERS_COLS)
         if not df.empty:
             df['grade'] = pd.to_numeric(df['grade'], errors='coerce').fillna(0).astype(int)
             save_members_master(df)
@@ -611,7 +638,7 @@ def generate_advisor_excel(schools_data, auth_data):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 8. UI
+# 7. UI
 # ---------------------------------------------------------
 def to_half_width(text):
     if not text: return ""
@@ -653,10 +680,10 @@ def school_page(s_name):
     if "schools_data" not in st.session_state: st.session_state.schools_data = load_schools()
     s_data = st.session_state.schools_data.get(s_name, {"principal":"", "advisors":[]})
     
+    # メニュー順序: 顧問→名簿→エントリー
     if "current_view" not in st.session_state: st.session_state["current_view"] = "① 顧問登録"
 
     menu = ["① 顧問登録", "② 部員名簿登録", "③ 大会エントリー"]
-    
     try: idx = menu.index(st.session_state["current_view"])
     except: idx = 0
     
@@ -669,15 +696,14 @@ def school_page(s_name):
         np = c_p[0].text_input("校長名", s_data.get("principal", ""))
         
         st.markdown("#### 顧問リスト")
-        # --- ヘッダー行を作成 (v1.24.1) ---
+        # ヘッダー行 (v1.24.1: 注意書きをここに配置)
         h = st.columns([0.8, 2, 1.5, 1.0, 0.7])
         h[0].markdown("**役職**")
         h[1].markdown("**氏名**")
         h[2].markdown("**役割**")
         h[3].caption("※顧問出席（参加する日にチェック）")
         h[4].markdown("**削除**")
-        # ------------------------------------
-
+        
         advs = s_data.get("advisors", [])
         
         for i, a in enumerate(advs):
@@ -737,10 +763,9 @@ def school_page(s_name):
         master = load_members_master()
         my_m = master[master['school']==s_name].copy()
         
-        # --- インデックスを1から開始 (v1.24.1) ---
+        # v1.24.2: インデックスを1から開始
         if not my_m.empty:
             my_m.index = range(1, len(my_m) + 1)
-        # ------------------------------------------
 
         col_config = {
             "name": st.column_config.TextColumn("氏名"),
@@ -750,6 +775,7 @@ def school_page(s_name):
             "jkf_no": st.column_config.TextColumn("JKF番号")
         }
         
+        # active列を隠す
         df_to_edit = my_m[['name','sex','grade','dob','jkf_no']]
         edited_df = st.data_editor(df_to_edit, column_config=col_config, num_rows="dynamic", use_container_width=True)
         
@@ -759,7 +785,11 @@ def school_page(s_name):
             edited_df['school'] = s_name
             # indexをリセットして結合
             edited_df = edited_df.reset_index(drop=True)
-            edited_df = edited_df[master.columns]
+            
+            # v1.24.2: 列の厳格化 (システム定義列のみに絞って結合)
+            for c in MEMBERS_COLS:
+                if c not in edited_df.columns: edited_df[c] = ""
+            edited_df = edited_df[MEMBERS_COLS]
             
             new_master = pd.concat([other_m, edited_df], ignore_index=True)
             save_members_master(new_master)
