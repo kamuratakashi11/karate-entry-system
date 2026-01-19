@@ -202,7 +202,7 @@ def load_conf():
 def save_conf(d): save_json("config", d)
 
 # ---------------------------------------------------------
-# 4. ロジック
+# 4. ロジック (バックアップ・復元・Excel出力)
 # ---------------------------------------------------------
 def create_backup():
     df = load_members_master()
@@ -265,8 +265,7 @@ def get_merged_data(school_name, tournament_id):
 
     def get_ent(row, key):
         uid = f"{row['school']}_{row['name']}"
-        val = entries.get(uid, {}).get(key, None)
-        return val # 変換ロジックを削除しました
+        return entries.get(uid, {}).get(key, None)
     
     cols_to_add = ["team_kata_chk", "team_kata_role", "team_kumi_chk", "team_kumi_role",
                    "kata_chk", "kata_val", "kata_rank", "kumi_chk", "kumi_val", "kumi_rank"]
@@ -286,7 +285,6 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta):
             uid = f"{r['school']}_{r['name']}"
             ent = entries_data.get(uid, {})
             
-            # 団体: データが "正" ならカウント
             if ent.get("team_kata_chk") and ent.get("team_kata_role") == "正": cnt_tk += 1
             if ent.get("team_kumi_chk") and ent.get("team_kumi_role") == "正": cnt_tku += 1
             
@@ -330,7 +328,7 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta):
     return errs
 
 # ---------------------------------------------------------
-# 5. Excel生成
+# 5. Excel生成 (申込書 & トーナメント用データ)
 # ---------------------------------------------------------
 def safe_write(ws, target, value, align_center=False):
     if value is None: return
@@ -423,14 +421,85 @@ def generate_excel(school_name, school_data, members_df, t_id, t_conf):
     return fname, "作成成功"
 
 # ---------------------------------------------------------
-# 6. UI: 学校ページ
+# 6. トーナメントデータ出力 (v1.22.0)
+# ---------------------------------------------------------
+def generate_tournament_excel(all_data, t_type):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        sheets_data = {}
+
+        for row in all_data:
+            name = row['name']
+            school = row['school']
+            sex = row['sex']
+            
+            # --- 個人形 ---
+            if row.get('kata_chk'):
+                k_val = row.get('kata_val')
+                k_rank = row.get('kata_rank', '')
+                
+                # 補欠、なし、出場しない を除外
+                if k_val and k_val != '補' and k_val != 'なし' and k_val != '出場しない':
+                    sheet_name = f"{sex}個人形"
+                    rank_cell = k_rank if k_val == '正' else ''
+                    seed_cell = k_rank if k_val == 'シード' else ''
+                    
+                    record = {
+                        "個人形_順位": rank_cell,
+                        "名前": name,
+                        "学校名": school,
+                        "シード順位": seed_cell
+                    }
+                    if sheet_name not in sheets_data: sheets_data[sheet_name] = []
+                    sheets_data[sheet_name].append(record)
+
+            # --- 個人組手 ---
+            if row.get('kumi_chk'):
+                ku_val = row.get('kumi_val')
+                ku_rank = row.get('kumi_rank', '')
+                
+                if ku_val and ku_val != '補' and ku_val != 'なし' and ku_val != '出場しない':
+                    if t_type == 'standard':
+                        sheet_name = f"{sex}個人組手"
+                        is_seed = (ku_val == 'シード')
+                        is_reg = (ku_val == '正')
+                    else:
+                        # 階級別: シート名を分ける
+                        sheet_name = f"{sex}個人組手_{ku_val}"
+                        is_seed = False
+                        is_reg = True # 階級選択者は正選手扱い
+
+                    rank_cell = ku_rank if is_reg else ''
+                    seed_cell = ku_rank if is_seed else ''
+                    
+                    record = {
+                        "個人組手_順位": rank_cell,
+                        "名前": name,
+                        "学校名": school,
+                        "シード順位": seed_cell
+                    }
+                    if sheet_name not in sheets_data: sheets_data[sheet_name] = []
+                    sheets_data[sheet_name].append(record)
+
+        # シート書き込み
+        sorted_sheet_names = sorted(sheets_data.keys())
+        for s_name in sorted_sheet_names:
+            recs = sheets_data[s_name]
+            # 4列固定
+            header_rank = "個人組手_順位" if "組手" in s_name else "個人形_順位"
+            df_out = pd.DataFrame(recs, columns=[header_rank, "名前", "学校名", "シード順位"])
+            df_out.to_excel(writer, sheet_name=s_name, index=False)
+            
+    return output.getvalue()
+
+# ---------------------------------------------------------
+# 7. UI: 学校ページ
 # ---------------------------------------------------------
 def school_page(s_name):
-    # CSS: ラジオボタンをシンプルに
     st.markdown("""
     <style>
     div[data-testid="stRadio"] > div {
-        flex-direction: row; /* 横並び */
+        flex-direction: row; 
     }
     </style>
     """, unsafe_allow_html=True)
@@ -517,21 +586,18 @@ def school_page(s_name):
                 uid = f"{r['school']}_{r['name']}"
                 name_style = 'background-color:#e8f5e9; color:#1b5e20; padding:2px 6px; border-radius:4px; font-weight:bold;' if r['sex'] == "男子" else 'background-color:#ffebee; color:#b71c1c; padding:2px 6px; border-radius:4px; font-weight:bold;'
                 
-                # 直結型: 保存されている値をそのままデフォルトに
                 def_tk = r.get("last_team_kata_role", "なし")
                 if not def_tk or def_tk not in ["正", "補"]: def_tk = "なし"
                 
                 def_tku = r.get("last_team_kumi_role", "なし")
                 if not def_tku or def_tku not in ["正", "補"]: def_tku = "なし"
                 
-                # 個人形も "シード" "正" "補" をそのまま受け入れる
                 def_k = r.get("last_kata_val", "なし")
                 if not def_k or def_k not in ["正", "補", "シード"]: def_k = "なし"
 
                 c = st.columns([2.0, 2.0, 2.0, 0.2, 2.2, 3.2])
                 c[0].markdown(f'<span style="{name_style}">{r["grade"]}年 {r["name"]}</span>', unsafe_allow_html=True)
                 
-                # 団体: 3択
                 opts_tk = ["なし", "正", "補"]
                 idx_tk = opts_tk.index(def_tk) if def_tk in opts_tk else 0
                 val_tk = c[1].radio(f"tk_{uid}", opts_tk, index=idx_tk, horizontal=True, key=f"rd_tk_{uid}", label_visibility="collapsed")
@@ -544,13 +610,11 @@ def school_page(s_name):
                 else:
                     val_tku = "なし"; c[2].caption("-")
 
-                # 個人形
                 if t_conf["type"] != "division":
                     if t_conf["type"] == "standard":
                         opts_k = ["なし", "シード", "正", "補"]
                     else:
                         opts_k = ["なし", "正", "補"]
-                    
                     idx_k = opts_k.index(def_k) if def_k in opts_k else 0
                     ck1, ck2 = c[4].columns([1.5, 1])
                     val_k = ck1.radio(f"k_{uid}", opts_k, index=idx_k, horizontal=True, key=f"rd_k_{uid}", label_visibility="collapsed")
@@ -558,7 +622,6 @@ def school_page(s_name):
                 else:
                     val_k = "なし"; rank_k = ""; c[4].caption("-")
                 
-                # 個人組手
                 c5a, c5b = c[5].columns([1.8, 1])
                 w_key = "weights_m" if r['sex'] == "男子" else "weights_w"
                 w_str = t_conf.get(w_key, "")
@@ -597,7 +660,6 @@ def school_page(s_name):
                 processed = {}
                 temp_processed = {}
                 for uid, raw in form_buffer.items():
-                    # 直結保存
                     tk_chk = (raw["val_tk"] != "なし")
                     tk_role = raw["val_tk"] if tk_chk else ""
                     
@@ -618,7 +680,6 @@ def school_page(s_name):
                     ku_rank = raw["rank_ku"]
 
                     name = uid.split('_')[1]
-                    # バリデーション
                     if k_chk and k_role == "正":
                         if not k_rank: st.error(f"❌ {name}さん: 個人形の順位が入力されていません。"); has_error = True
                     elif not k_chk or k_role == "補" or k_role == "シード": k_rank = ""
@@ -774,23 +835,27 @@ def admin_page():
                 save_conf(conf); st.success("保存しました")
 
     with t2:
-        st.subheader("全データダウンロード")
+        st.subheader("トーナメントデータ出力")
         tid = next((k for k, v in conf["tournaments"].items() if v["active"]), "kantou")
+        # データ収集
         master = load_members_master(); entries = load_entries(tid)
         full_data = []
         for _, m in master.iterrows():
             uid = f"{m['school']}_{m['name']}"
             ent = entries.get(uid, {})
-            if ent and (ent.get("kata_chk") or ent.get("kumi_chk") or ent.get("team_kata_chk") or ent.get("team_kumi_chk")):
+            # 参加フラグがあるものだけ抽出
+            if ent and (ent.get("kata_chk") or ent.get("kumi_chk")):
                 row = m.to_dict(); row.update(ent)
                 row["school_no"] = auth.get(m['school'], {}).get("school_no", 999)
                 full_data.append(row)
-        df_out = pd.DataFrame(full_data)
-        if not df_out.empty:
-            df_out = df_out.sort_values(by=["school_no", "grade"])
-            csv = df_out.to_csv(index=False).encode('utf-8_sig')
-            st.download_button("エントリー一覧 (CSV)", csv, "entries.csv")
-        else: st.warning("エントリーデータがありません")
+        
+        t_type = conf["tournaments"][tid]["type"]
+        if st.button("📥 トーナメント用Excelをダウンロード"):
+            if not full_data:
+                st.warning("エントリーデータがありません")
+            else:
+                xlsx_data = generate_tournament_excel(full_data, t_type)
+                st.download_button("Excelダウンロード開始", xlsx_data, "tournament_entries.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     with t3:
         st.subheader("学校番号 & パスワード管理")
