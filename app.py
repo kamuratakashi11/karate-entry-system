@@ -857,7 +857,7 @@ def school_page(s_name):
                 entries_update[meta_key] = school_meta
 
         with st.form("entry_form_unified"):
-            cols = st.columns([2.0, 1.2, 1.2, 0.2, 3.1, 3.1])
+            cols = st.columns([1.8, 1.3, 1.3, 0.2, 3.1, 3.1])
             cols[0].markdown("**氏名**")
             cols[1].markdown("**団体形**")
             cols[2].markdown("**団体組手**")
@@ -1194,6 +1194,7 @@ def main():
 
 
 if __name__ == "__main__": main()
+
 
 
 
