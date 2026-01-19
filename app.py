@@ -134,7 +134,6 @@ def load_json(tab_name, default):
     try:
         ws = get_worksheet_safe(tab_name)
         val = ws.acell('A1').value
-        # 防波堤: Noneや空文字対策
         if not val: return default
         parsed = json.loads(val)
         return parsed if parsed is not None else default
@@ -194,7 +193,6 @@ def load_conf():
         "admin_password": "1234"
     }
     data = load_json("config", default_conf)
-    # 欠損値の補完
     if "limits" not in data: data["limits"] = DEFAULT_LIMITS
     if "tournaments" not in data: data["tournaments"] = DEFAULT_TOURNAMENTS
     if "year" not in data: data["year"] = "6"
@@ -291,12 +289,14 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta):
             if ent.get("team_kumi_chk") and ent.get("team_kumi_role") == "正選手": cnt_tku += 1
             
             if ent.get("kata_chk"):
-                if ent.get("kata_val") == "補欠": cnt_ind_k_sub += 1
-                else: cnt_ind_k_reg += 1
+                k_val = ent.get("kata_val")
+                if k_val == "補欠": cnt_ind_k_sub += 1
+                elif k_val != "シード": cnt_ind_k_reg += 1 # シードはカウントしない
+                
             if ent.get("kumi_chk"):
                 val = ent.get("kumi_val", "")
                 if val == "補欠": cnt_ind_ku_sub += 1
-                elif val and val != "出場しない": cnt_ind_ku_reg += 1
+                elif val and val != "出場しない" and val != "シード": cnt_ind_ku_reg += 1 # シードはカウントしない
 
         if cnt_tk > 0:
             mn, mx = limits["team_kata"]["min"], limits["team_kata"]["max"]
@@ -318,9 +318,9 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta):
                 if not (mn <= cnt_tku <= mx):
                     errs.append(f"❌ {sex}団体組手(3人制): 正選手は {mn}～{mx}名で登録してください。(現在{cnt_tku}名)")
         
-        if cnt_ind_k_reg > limits["ind_kata_reg"]["max"]: errs.append(f"❌ {sex}個人形(正): 上限 {limits['ind_kata_reg']['max']}名を超えています。")
+        if cnt_ind_k_reg > limits["ind_kata_reg"]["max"]: errs.append(f"❌ {sex}個人形(正): 上限 {limits['ind_kata_reg']['max']}名を超えています。(一般のみカウント)")
         if cnt_ind_k_sub > limits["ind_kata_sub"]["max"]: errs.append(f"❌ {sex}個人形(補): 上限 {limits['ind_kata_sub']['max']}名を超えています。")
-        if cnt_ind_ku_reg > limits["ind_kumi_reg"]["max"]: errs.append(f"❌ {sex}個人組手(正): 上限 {limits['ind_kumi_reg']['max']}名を超えています。")
+        if cnt_ind_ku_reg > limits["ind_kumi_reg"]["max"]: errs.append(f"❌ {sex}個人組手(正): 上限 {limits['ind_kumi_reg']['max']}名を超えています。(一般のみカウント)")
         if cnt_ind_ku_sub > limits["ind_kumi_sub"]["max"]: errs.append(f"❌ {sex}個人組手(補): 上限 {limits['ind_kumi_sub']['max']}名を超えています。")
 
     return errs
@@ -486,13 +486,15 @@ def school_page(s_name):
                 entries_update[meta_key] = school_meta
 
         with st.form("entry_form_unified"):
-            cols = st.columns([1.5, 2.3, 2.3, 2.7, 3.2])
+            # Layout調整: 団体と個人の間に空白列(0.2)を追加
+            cols = st.columns([1.5, 2.3, 2.3, 0.2, 2.7, 3.2])
             cols[0].markdown("**氏名**")
-            cols[1].markdown("**団体形** (なし/正/補)")
+            cols[1].markdown("**団体形**")
             kumi_label = f"**団体組手({m_mode if m_mode==w_mode else '選択'})**"
-            cols[2].markdown(f"{kumi_label} (なし/正/補)")
-            cols[3].markdown("**個人形** (なし/正/補)[順位]")
-            cols[4].markdown("**個人組手** (階級)[順位]")
+            cols[2].markdown(f"{kumi_label}")
+            # cols[3] is spacer
+            cols[4].markdown("**個人形**")
+            cols[5].markdown("**個人組手**")
 
             form_buffer = {}
 
@@ -511,7 +513,7 @@ def school_page(s_name):
                     val = r.get("last_kata_val")
                     def_k = "補" if val == "補欠" else "正"
 
-                c = st.columns([1.5, 2.3, 2.3, 2.7, 3.2])
+                c = st.columns([1.5, 2.3, 2.3, 0.2, 2.7, 3.2])
                 c[0].markdown(f'<span style="{name_style}">{r["grade"]}年 {r["name"]}</span>', unsafe_allow_html=True)
                 
                 opts_tk = ["なし", "正", "補"]
@@ -529,13 +531,13 @@ def school_page(s_name):
                 if t_conf["type"] != "division":
                     opts_k = ["なし", "正", "補"]
                     idx_k = opts_k.index(def_k) if def_k in opts_k else 0
-                    ck1, ck2 = c[3].columns([1.5, 1])
+                    ck1, ck2 = c[4].columns([1.5, 1])
                     val_k = ck1.radio(f"k_{uid}", opts_k, index=idx_k, horizontal=True, key=f"rd_k_{uid}", label_visibility="collapsed")
                     rank_k = ck2.text_input("順位", r.get("last_kata_rank",""), key=f"rk_k_{uid}", label_visibility="collapsed", placeholder="順位")
                 else:
-                    val_k = "なし"; rank_k = ""; c[3].caption("-")
+                    val_k = "なし"; rank_k = ""; c[4].caption("-")
                 
-                c4a, c4b = c[4].columns([1.8, 1])
+                c5a, c5b = c[5].columns([1.8, 1])
                 w_key = "weights_m" if r['sex'] == "男子" else "weights_w"
                 w_str = t_conf.get(w_key, "")
                 w_list = ["出場しない"] + [f"{w.strip()}kg級" for w in w_str.split(",")] + ["補欠"]
@@ -547,9 +549,8 @@ def school_page(s_name):
                 if raw_kumi is None or pd.isna(raw_kumi):
                     def_val = "出場しない"
                 else:
-                    def_val = str(raw_kumi) # 文字列化
+                    def_val = str(raw_kumi)
                 
-                # 安全な状態にしてから条件判定
                 if "kg" in def_val and t_conf["type"] == "standard": 
                     def_val = "出場しない"
                 elif t_conf["type"] == "weight" and def_val not in w_list and def_val != "補欠" and def_val != "出場しない": 
@@ -557,8 +558,8 @@ def school_page(s_name):
 
                 try: idx = w_list.index(def_val)
                 except: idx = 0
-                ku_val = c4a.selectbox("階級", w_list, index=idx, key=f"sel_ku_{uid}", label_visibility="collapsed")
-                rank_ku = c4b.text_input("順位", r.get("last_kumi_rank",""), key=f"rk_ku_{uid}", label_visibility="collapsed", placeholder="順位")
+                ku_val = c5a.selectbox("階級", w_list, index=idx, key=f"sel_ku_{uid}", label_visibility="collapsed")
+                rank_ku = c5b.text_input("順位", r.get("last_kumi_rank",""), key=f"rk_ku_{uid}", label_visibility="collapsed", placeholder="順位")
 
                 form_buffer[uid] = {
                     "val_tk": val_tk, "val_tku": val_tku, 
