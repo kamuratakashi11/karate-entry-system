@@ -594,7 +594,6 @@ def school_page(s_id):
             "d2": st.column_config.CheckboxColumn("2日目"),
         }
         
-        # 修正: データを表示する直前にインデックスを完全にクリーンにする
         adv_df.reset_index(drop=True, inplace=True)
         edited_adv_df = st.data_editor(adv_df[["name", "role", "d1", "d2"]], 
                                        column_config=col_conf_adv, 
@@ -631,7 +630,6 @@ def school_page(s_id):
             "jkf_no": st.column_config.TextColumn("JKF番号(任意)")
         }
         
-        # 修正: データを表示する直前にインデックスを完全にクリーンにする
         disp_df.reset_index(drop=True, inplace=True)
         edited_mem_df = st.data_editor(disp_df, column_config=col_config_mem, num_rows="dynamic", use_container_width=True, key="mem_editor", hide_index=True)
         
@@ -920,7 +918,9 @@ def admin_page():
                 "ID": sid, "基本名(申込書)": d.get("base_name",""), "略称(集計用)": d.get("short_name", d.get("base_name","")),
                 "No": d.get("school_no", 999), "Password": d.get("password",""), "校長名": d.get("principal","")
             })
+        
         edited = st.data_editor(pd.DataFrame(recs), disabled=["ID"], key="v2_auth_edit")
+        
         if st.button("変更を保存"):
             has_error = False
             for _, row in edited.iterrows():
@@ -933,6 +933,34 @@ def admin_page():
                     auth[sid]["password"] = row["Password"]
                     auth[sid]["principal"] = row["校長名"]
             if not has_error: save_auth(auth); st.success("保存しました")
+        
+        st.divider()
+        with st.expander("🗑️ 学校アカウントの削除 (Danger Zone)", expanded=False):
+            st.warning("⚠️ この操作は取り消せません。学校アカウントと、関連する部員データが全て削除されます。")
+            delete_options = {f"{v['base_name']} ({k})": k for k, v in auth.items()}
+            target_school_name = st.selectbox("削除する学校を選択", list(delete_options.keys()))
+            
+            confirm_del = st.checkbox("データの消失を理解して削除します")
+            if st.button("完全削除する", type="primary"):
+                if confirm_del and target_school_name:
+                    target_sid = delete_options[target_school_name]
+                    with st.spinner("データを削除中..."):
+                        create_backup() # 安全のためバックアップ
+                        
+                        # 1. 部員削除
+                        master = load_members_master(force_reload=True)
+                        new_master = master[master['school_id'] != target_sid]
+                        save_members_master(new_master)
+                        
+                        # 2. アカウント削除
+                        if target_sid in auth:
+                            del auth[target_sid]
+                            save_auth(auth)
+                        
+                        time.sleep(1)
+                    st.success(f"✅ {target_school_name} を削除しました。"); time.sleep(1); st.rerun()
+                else:
+                    st.error("チェックボックスを確認してください")
     
     elif admin_tab == "📅 年次処理":
         st.subheader("🌸 年度更新処理 (v2)")
@@ -954,6 +982,7 @@ def admin_page():
                 st.warning("⚠️ この操作は取り消せません")
                 if st.button("🗑️ 卒業生データを全て削除する"):
                     clear_graduates_archive(); st.success("削除しました"); time.sleep(0.5); st.rerun()
+
         st.markdown("---")
         st.subheader("⏪ 復元 (Undo)")
         if st.button("バックアップから復元する"): res = restore_from_backup(); st.warning(res)
@@ -961,6 +990,7 @@ def admin_page():
 def main():
     st.set_page_config(page_title="Entry System v2", layout="wide")
     st.title("🥋 エントリーシステム v2 (Sandbox)")
+    
     if "logged_in_school" in st.session_state:
         school_page(st.session_state["logged_in_school"]); return
 
