@@ -594,12 +594,12 @@ def school_page(s_id):
             "d2": st.column_config.CheckboxColumn("2日目"),
         }
         
-        # 修正: ヘッダー名削除
+        # hide_index=True にして左端の空白列を完全削除
         edited_adv_df = st.data_editor(adv_df[["name", "role", "d1", "d2"]], 
                                        column_config=col_conf_adv, 
-                                       num_rows="dynamic", use_container_width=True, key="adv_editor")
+                                       num_rows="dynamic", use_container_width=True, key="adv_editor", hide_index=True)
         
-        st.caption("💡 **削除するには:** 表の左端（行番号）をクリックして行を選び、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
+        st.caption("💡 **削除するには:** 行を選択し、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
         
         if st.button("💾 顧問情報を保存", type="primary"):
             if edited_adv_df["name"].isnull().any() or (edited_adv_df["name"] == "").any():
@@ -630,10 +630,10 @@ def school_page(s_id):
             "jkf_no": st.column_config.TextColumn("JKF番号(任意)")
         }
         
-        # 修正: ヘッダー名削除
-        edited_mem_df = st.data_editor(disp_df, column_config=col_config_mem, num_rows="dynamic", use_container_width=True, key="mem_editor")
+        # hide_index=True にして左端の空白列を完全削除
+        edited_mem_df = st.data_editor(disp_df, column_config=col_config_mem, num_rows="dynamic", use_container_width=True, key="mem_editor", hide_index=True)
         
-        st.caption("💡 **削除するには:** 表の左端（行番号）をクリックして行を選び、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
+        st.caption("💡 **削除するには:** 行を選択し、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
 
         if st.button("💾 名簿を保存して更新", type="primary"):
             if edited_mem_df["name"].isnull().any() or (edited_mem_df["name"] == "").any():
