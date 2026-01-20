@@ -570,8 +570,22 @@ def school_page(s_id):
         if f"v2_entry_cache_{active_tid}" in st.session_state: del st.session_state[f"v2_entry_cache_{active_tid}"]
         st.success("最新データを読み込みました"); time.sleep(0.5); st.rerun()
 
+    # School Page Navigation Logic (Persistence)
     menu = ["① 顧問登録", "② 部員名簿登録", "③ 大会エントリー"]
-    selected_view = st.radio("メニュー選択", menu, key="school_menu_key", horizontal=True, label_visibility="collapsed")
+    
+    # Initialize session state for this menu if not exists
+    if "school_menu_idx" not in st.session_state:
+        st.session_state["school_menu_idx"] = 0
+    
+    # Radio button with explicit index
+    selected_view = st.radio("メニュー選択", menu, index=st.session_state["school_menu_idx"], key="school_menu_radio", horizontal=True, label_visibility="collapsed")
+    
+    # Update state immediately
+    current_idx = menu.index(selected_view)
+    if st.session_state["school_menu_idx"] != current_idx:
+        st.session_state["school_menu_idx"] = current_idx
+        st.rerun()
+
     st.markdown("---")
 
     if selected_view == "① 顧問登録":
@@ -832,17 +846,36 @@ def school_page(s_id):
 def admin_page():
     st.title("🔧 管理者画面 (v2)")
     conf = load_conf()
-    pw_input = st.text_input("Admin Password", type="password")
-    st.caption("※パスワードを忘れた場合は、secrets.jsonを確認するか、システム開発者に連絡してください")
-    if not st.button("管理者ログイン"): 
-        if "admin_ok" not in st.session_state: st.warning("パスワードを入力してログインボタンを押してください"); return
     
-    if pw_input == conf.get("admin_password", "1234"): st.session_state["admin_ok"] = True
-    else: st.error("パスワードが違います"); return
+    # ログイン維持のためのState確認
+    if "admin_ok" not in st.session_state:
+        st.session_state["admin_ok"] = False
 
+    if not st.session_state["admin_ok"]:
+        pw_input = st.text_input("Admin Password", type="password")
+        st.caption("※パスワードを忘れた場合は、secrets.jsonを確認するか、システム開発者に連絡してください")
+        if st.button("管理者ログイン"): 
+            if pw_input == conf.get("admin_password", "1234"):
+                st.session_state["admin_ok"] = True
+                st.rerun()
+            else:
+                st.error("パスワードが違います")
+        return # ログインしていない場合はここで終了
+
+    # 以下、ログイン後の表示
     auth = load_auth()
-    admin_menu = ["🏆 大会設定", "📥 データ出力", "🏫 アカウント(編集)", "📅 年次処理"]
-    admin_tab = st.radio("メニュー", admin_menu, key="admin_menu_key", horizontal=True)
+    
+    # Radio Menu for Admin
+    admin_menu_opts = ["🏆 大会設定", "📥 データ出力", "🏫 アカウント(編集)", "📅 年次処理"]
+    if "admin_menu_idx" not in st.session_state: st.session_state["admin_menu_idx"] = 0
+    admin_tab = st.radio("メニュー", admin_menu_opts, index=st.session_state["admin_menu_idx"], key="admin_menu_radio", horizontal=True)
+    
+    # Update State
+    curr_adm_idx = admin_menu_opts.index(admin_tab)
+    if st.session_state["admin_menu_idx"] != curr_adm_idx:
+        st.session_state["admin_menu_idx"] = curr_adm_idx
+        st.rerun()
+
     st.divider()
 
     if admin_tab == "🏆 大会設定":
@@ -873,6 +906,21 @@ def admin_page():
                 lm["ind_kata_sub"]["max"] = c2.number_input("個人形(補) 上限", 0, 10, lm["ind_kata_sub"]["max"])
                 if st.form_submit_button("人数制限を保存"):
                     conf["limits"] = lm; save_conf(conf); st.success("保存しました")
+        
+        with st.expander("🔐 管理者パスワード変更"):
+            with st.form("admin_pw_change"):
+                new_admin_pw = st.text_input("新しい管理者パスワード", type="password")
+                if st.form_submit_button("パスワードを変更して保存"):
+                    if len(new_admin_pw) >= 4:
+                        conf["admin_password"] = new_admin_pw
+                        save_conf(conf)
+                        st.success("パスワードを変更しました。再ログインしてください。")
+                        time.sleep(2)
+                        st.session_state["admin_ok"] = False # 強制ログアウト
+                        st.rerun()
+                    else:
+                        st.error("パスワードは4文字以上にしてください")
+
         with st.expander("⚙️ 詳細設定（ファイル名・階級など ※通常は変更不要）"):
             t_data = conf["tournaments"]["shinjin"]
             with st.form("edit_t_advanced"):
@@ -918,9 +966,7 @@ def admin_page():
                 "ID": sid, "基本名(申込書)": d.get("base_name",""), "略称(集計用)": d.get("short_name", d.get("base_name","")),
                 "No": d.get("school_no", 999), "Password": d.get("password",""), "校長名": d.get("principal","")
             })
-        
         edited = st.data_editor(pd.DataFrame(recs), disabled=["ID"], key="v2_auth_edit")
-        
         if st.button("変更を保存"):
             has_error = False
             for _, row in edited.iterrows():
@@ -945,18 +991,13 @@ def admin_page():
                 if confirm_del and target_school_name:
                     target_sid = delete_options[target_school_name]
                     with st.spinner("データを削除中..."):
-                        create_backup() # 安全のためバックアップ
-                        
-                        # 1. 部員削除
+                        create_backup()
                         master = load_members_master(force_reload=True)
                         new_master = master[master['school_id'] != target_sid]
                         save_members_master(new_master)
-                        
-                        # 2. アカウント削除
                         if target_sid in auth:
                             del auth[target_sid]
                             save_auth(auth)
-                        
                         time.sleep(1)
                     st.success(f"✅ {target_school_name} を削除しました。"); time.sleep(1); st.rerun()
                 else:
@@ -982,7 +1023,6 @@ def admin_page():
                 st.warning("⚠️ この操作は取り消せません")
                 if st.button("🗑️ 卒業生データを全て削除する"):
                     clear_graduates_archive(); st.success("削除しました"); time.sleep(0.5); st.rerun()
-
         st.markdown("---")
         st.subheader("⏪ 復元 (Undo)")
         if st.button("バックアップから復元する"): res = restore_from_backup(); st.warning(res)
@@ -991,26 +1031,39 @@ def main():
     st.set_page_config(page_title="Entry System v2", layout="wide")
     st.title("🥋 エントリーシステム v2 (Sandbox)")
     
-    if "logged_in_school" in st.session_state:
-        school_page(st.session_state["logged_in_school"]); return
+    # Top Menu Navigation (Persistence)
+    top_menu_opts = ["🏠 学校ログイン", "🆕 新規登録", "🔧 管理者"]
+    if "top_menu_idx" not in st.session_state: st.session_state["top_menu_idx"] = 0
+    
+    # Top Navigation Bar (Horizontal Radio)
+    top_nav = st.radio("Main Navigation", top_menu_opts, index=st.session_state["top_menu_idx"], key="top_menu_radio", horizontal=True, label_visibility="collapsed")
+    
+    # Update State logic
+    curr_top_idx = top_menu_opts.index(top_nav)
+    if st.session_state["top_menu_idx"] != curr_top_idx:
+        st.session_state["top_menu_idx"] = curr_top_idx
+        st.rerun()
 
     auth = load_auth()
-    t1, t2, t3 = st.tabs(["ログイン", "新規登録(v2)", "管理者"])
-    
-    with t1:
-        st.info("💡 初めての方は「新規登録(v2)」タブから登録を行ってください。")
-        with st.form("login_form"):
-            name_map = {f"{v.get('base_name')}高等学校": k for k, v in auth.items()}
-            s_name = st.selectbox("学校名", list(name_map.keys()))
-            pw = st.text_input("パスワード", type="password")
-            if st.form_submit_button("ログイン"):
-                if s_name:
-                    sid = name_map[s_name]
-                    if auth[sid]["password"] == pw:
-                        st.session_state["logged_in_school"] = sid; st.rerun()
-                    else: st.error("パスワードが違います")
 
-    with t2:
+    # View Switching
+    if top_nav == "🏠 学校ログイン":
+        if "logged_in_school" in st.session_state:
+            school_page(st.session_state["logged_in_school"])
+        else:
+            st.info("💡 学校を選択してログインしてください。")
+            with st.form("login_form"):
+                name_map = {f"{v.get('base_name')}高等学校": k for k, v in auth.items()}
+                s_name = st.selectbox("学校名", list(name_map.keys()))
+                pw = st.text_input("パスワード", type="password")
+                if st.form_submit_button("ログイン"):
+                    if s_name:
+                        sid = name_map[s_name]
+                        if auth[sid]["password"] == pw:
+                            st.session_state["logged_in_school"] = sid; st.rerun()
+                        else: st.error("パスワードが違います")
+
+    elif top_nav == "🆕 新規登録":
         st.markdown("###### 新規登録")
         with st.form("register_form"):
             c1, c2 = st.columns([3, 1])
@@ -1035,6 +1088,7 @@ def main():
                             save_auth(auth); st.success(f"登録完了! ID: {new_id}"); time.sleep(1); st.rerun()
                 else: st.error("入力を確認してください")
 
-    with t3: admin_page()
+    elif top_nav == "🔧 管理者":
+        admin_page()
 
 if __name__ == "__main__": main()
