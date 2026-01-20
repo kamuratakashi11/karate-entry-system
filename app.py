@@ -594,7 +594,8 @@ def school_page(s_id):
             "d2": st.column_config.CheckboxColumn("2日目"),
         }
         
-        # hide_index=True にして左端の空白列を完全削除
+        # 修正: データを表示する直前にインデックスを完全にクリーンにする
+        adv_df.reset_index(drop=True, inplace=True)
         edited_adv_df = st.data_editor(adv_df[["name", "role", "d1", "d2"]], 
                                        column_config=col_conf_adv, 
                                        num_rows="dynamic", use_container_width=True, key="adv_editor", hide_index=True)
@@ -630,7 +631,8 @@ def school_page(s_id):
             "jkf_no": st.column_config.TextColumn("JKF番号(任意)")
         }
         
-        # hide_index=True にして左端の空白列を完全削除
+        # 修正: データを表示する直前にインデックスを完全にクリーンにする
+        disp_df.reset_index(drop=True, inplace=True)
         edited_mem_df = st.data_editor(disp_df, column_config=col_config_mem, num_rows="dynamic", use_container_width=True, key="mem_editor", hide_index=True)
         
         st.caption("💡 **削除するには:** 行を選択し、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
