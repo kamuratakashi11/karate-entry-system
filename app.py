@@ -594,12 +594,12 @@ def school_page(s_id):
             "d2": st.column_config.CheckboxColumn("2日目"),
         }
         
-        adv_df.index.name = "選択"
+        # 修正: ヘッダー名削除
         edited_adv_df = st.data_editor(adv_df[["name", "role", "d1", "d2"]], 
                                        column_config=col_conf_adv, 
                                        num_rows="dynamic", use_container_width=True, key="adv_editor")
         
-        st.caption("💡 **削除するには:** 表の左端（**選択**列）をクリックして行を選び、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
+        st.caption("💡 **削除するには:** 表の左端（行番号）をクリックして行を選び、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
         
         if st.button("💾 顧問情報を保存", type="primary"):
             if edited_adv_df["name"].isnull().any() or (edited_adv_df["name"] == "").any():
@@ -630,10 +630,10 @@ def school_page(s_id):
             "jkf_no": st.column_config.TextColumn("JKF番号(任意)")
         }
         
-        disp_df.index.name = "選択"
+        # 修正: ヘッダー名削除
         edited_mem_df = st.data_editor(disp_df, column_config=col_config_mem, num_rows="dynamic", use_container_width=True, key="mem_editor")
         
-        st.caption("💡 **削除するには:** 表の左端（**選択**列）をクリックして行を選び、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
+        st.caption("💡 **削除するには:** 表の左端（行番号）をクリックして行を選び、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
 
         if st.button("💾 名簿を保存して更新", type="primary"):
             if edited_mem_df["name"].isnull().any() or (edited_mem_df["name"] == "").any():
@@ -659,7 +659,6 @@ def school_page(s_id):
         master_check = load_members_master(force_reload=False)
         my_check = master_check[master_check['school_id']==s_id]
         
-        # 修正: ヘッダーを日本語に変更
         rename_map = {'grade': '学年', 'name': '氏名', 'jkf_no': 'JKF番号'}
         
         c_male, c_female = st.columns(2)
@@ -967,7 +966,7 @@ def main():
     t1, t2, t3 = st.tabs(["ログイン", "新規登録(v2)", "管理者"])
     
     with t1:
-        st.info("💡β版1.20.2に変更しました。もう一度 「新規登録(v2)」タブから登録を行ってください。")
+        st.info("💡 初めての方は「新規登録(v2)」タブから登録を行ってください。")
         with st.form("login_form"):
             name_map = {f"{v.get('base_name')}高等学校": k for k, v in auth.items()}
             s_name = st.selectbox("学校名", list(name_map.keys()))
