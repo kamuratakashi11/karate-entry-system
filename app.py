@@ -27,7 +27,6 @@ KEY_FILE = 'secrets.json'
 SHEET_NAME = 'tournament_db' 
 V2_PREFIX = "v2_" 
 
-# 復活: display_order を追加
 MEMBERS_COLS = ["school_id", "name", "sex", "grade", "dob", "jkf_no", "display_order", "active"]
 
 def to_half_width(text):
@@ -192,7 +191,7 @@ def load_members_master(force_reload=False):
     df['grade'] = pd.to_numeric(df['grade'], errors='coerce').fillna(0).astype(int)
     df['jkf_no'] = df['jkf_no'].astype(str).replace('nan', '')
     df['dob'] = df['dob'].astype(str).replace('nan', '')
-    df['display_order'] = df['display_order'].astype(str).replace('nan', '') # 復活
+    df['display_order'] = df['display_order'].astype(str).replace('nan', '') 
     df = df[MEMBERS_COLS]
     st.session_state["v2_master_cache"] = df
     return df
@@ -202,7 +201,7 @@ def save_members_master(df):
     df = df.fillna("")
     df['jkf_no'] = df['jkf_no'].astype(str)
     df['dob'] = df['dob'].astype(str)
-    df['display_order'] = df['display_order'].astype(str) # 復活
+    df['display_order'] = df['display_order'].astype(str) 
     for c in MEMBERS_COLS:
         if c not in df.columns: df[c] = ""
     df_to_save = df[MEMBERS_COLS]
@@ -408,7 +407,6 @@ def generate_excel(school_id, school_data, members_df, t_id, t_conf):
     members_df['sex_rank'] = members_df['sex'].map({'男子': 0, '女子': 1})
     members_df['grade_rank'] = members_df['grade'].map({3: 0, 2: 1, 1: 2})
     
-    # 復活: Excel出力時のソート機能
     def get_sort_key(row):
         try: 
             if pd.notna(row['display_order']) and str(row['display_order']).strip() != "":
@@ -417,10 +415,9 @@ def generate_excel(school_id, school_data, members_df, t_id, t_conf):
         except: return 999999.0
     members_df['custom_order'] = members_df.apply(get_sort_key, axis=1)
 
-    entries = members_df[
-        (members_df['last_team_kata_chk']==True) | (members_df['last_team_kumi_chk']==True) |
-        (members_df['last_kata_chk']==True) | (members_df['last_kumi_chk']==True)
-    ].sort_values(by=['custom_order', 'sex_rank', 'grade_rank', 'name'])
+    # ★変更箇所: エントリー有無に関わらず、大会の対象学年の生徒全員を出力する
+    target_grades = [int(g) for g in t_conf.get('grades', [1, 2, 3])]
+    entries = members_df[members_df['grade'].isin(target_grades)].sort_values(by=['custom_order', 'sex_rank', 'grade_rank', 'name'])
 
     for i, (_, row) in enumerate(entries.iterrows()):
         r = coords["start_row"] + (i // coords["cap"] * coords["offset"]) + (i % coords["cap"])
@@ -670,7 +667,6 @@ def school_page(s_id):
         my_m = master[master['school_id']==s_id].copy()
         other_m = master[master['school_id']!=s_id].copy()
         
-        # 復活: disp_df に display_order を追加
         disp_df = my_m[["display_order", "name", "sex", "grade", "dob", "jkf_no"]].copy()
         col_config_mem = {
             "display_order": st.column_config.NumberColumn("No.", help="表示順（任意）", step=1, format="%d"),
@@ -687,19 +683,31 @@ def school_page(s_id):
         st.caption("💡 **削除するには:** 行を選択し、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
 
         if st.button("💾 名簿を保存して更新", type="primary"):
-            if edited_mem_df["name"].isnull().any() or (edited_mem_df["name"] == "").any():
-                st.error("❌ 氏名が未入力の行があります。"); return
-            if edited_mem_df["sex"].isnull().any() or (edited_mem_df["sex"] == "").any():
-                st.error("❌ 性別が未選択の行があります。"); return
-            if edited_mem_df["grade"].isnull().any() or (edited_mem_df["grade"] == "").any():
-                st.error("❌ 学年が未選択の行があります。"); return
+            # ★変更箇所: まったく入力がない空白行を無視する
+            is_empty_row = (
+                (edited_mem_df["name"].isna() | (edited_mem_df["name"].astype(str).str.strip() == "")) &
+                (edited_mem_df["sex"].isna() | (edited_mem_df["sex"].astype(str).str.strip() == "")) &
+                (edited_mem_df["grade"].isna() | (edited_mem_df["grade"].astype(str).str.strip() == ""))
+            )
+            edited_mem_df = edited_mem_df[~is_empty_row]
+
+            # ★変更箇所: 必須項目の厳格な空チェック（NaNと空文字の両方を検知）
+            name_empty = edited_mem_df["name"].isna() | (edited_mem_df["name"].astype(str).str.strip() == "")
+            sex_empty = edited_mem_df["sex"].isna() | (edited_mem_df["sex"].astype(str).str.strip() == "")
+            grade_empty = edited_mem_df["grade"].isna() | (edited_mem_df["grade"].astype(str).str.strip() == "")
+
+            if name_empty.any():
+                st.error("❌ 氏名が未入力の行があります。行を削除するか、氏名を入力してください。"); return
+            if sex_empty.any():
+                st.error("❌ 性別が未選択の行があります。行を削除するか、性別を選択してください。"); return
+            if grade_empty.any():
+                st.error("❌ 学年が未選択の行があります。行を削除するか、学年を選択してください。"); return
             
             with st.spinner("💾 データを保存しています..."):
                 create_backup() 
                 edited_mem_df["school_id"] = s_id
                 edited_mem_df["active"] = True
                 
-                # 復活: No.列の値を文字列に変換して保存
                 edited_mem_df['display_order'] = edited_mem_df['display_order'].apply(lambda x: str(int(x)) if pd.notnull(x) and str(x).strip() != "" else "")
 
                 for c in MEMBERS_COLS:
@@ -716,7 +724,6 @@ def school_page(s_id):
         
         rename_map = {'display_order': 'No.', 'grade': '学年', 'name': '氏名', 'jkf_no': 'JKF番号'}
         
-        # 復活: 確認リストのソートロジック
         def sort_key(row):
             try: 
                 if pd.notna(row['display_order']) and str(row['display_order']).strip() != "":
@@ -755,7 +762,6 @@ def school_page(s_id):
         merged = get_merged_data(s_id, active_tid)
         if merged.empty: st.warning("エントリー可能な部員がいません。名簿を登録してください。"); return
         
-        # 復活: エントリー画面のソートロジック
         merged['sex_rank'] = merged['sex'].map({'男子': 0, '女子': 1})
         merged['grade_rank'] = merged['grade'].map({3: 0, 2: 1, 1: 2})
         def get_sort_key_ent(row):
@@ -803,7 +809,6 @@ def school_page(s_id):
                 c = st.columns([1.7, 1.4, 1.4, 0.1, 3.1, 3.1])
                 c[0].markdown(f'<span style="{name_style}">{r["grade"]}年 {r["name"]}</span>', unsafe_allow_html=True)
                 
-                # 変更: ラジオボタンの順序を "なし", "正", "補" に変更
                 def_tk = r.get("last_team_kata_role", "なし"); opts_tk = ["なし", "正", "補"]
                 if def_tk not in opts_tk: def_tk = "なし"
                 val_tk = c[1].radio(f"tk_{uid}", opts_tk, index=opts_tk.index(def_tk), horizontal=True, label_visibility="collapsed")
@@ -815,7 +820,6 @@ def school_page(s_id):
                     val_tku = c[2].radio(f"tku_{uid}", opts_tku, index=opts_tku.index(def_tku), horizontal=True, label_visibility="collapsed")
                 else: val_tku = "なし"; c[2].caption("-")
                 
-                # 変更: ラジオボタンの順序を "なし", "正", "補", "シード" に変更
                 def_k = r.get("last_kata_val", "なし")
                 if t_conf["type"] == "standard": opts_k = ["なし", "正", "補", "シード"]
                 else: opts_k = ["なし", "正", "補"]
@@ -849,7 +853,6 @@ def school_page(s_id):
                 for uid, raw in form_buffer.items():
                     k_chk = (raw["val_k"] != "なし"); k_val = raw["val_k"] if k_chk else ""
                     
-                    # 復活: 矛盾チェック (形)
                     if (k_val == "補" or k_val == "なし") and raw["rank_k"]:
                         st.error(f"❌ {raw['name']} 個人形: 「{k_val}」ですが順位が入力されています。順位を削除してください。")
                         has_error = True
@@ -867,7 +870,6 @@ def school_page(s_id):
 
                     ku_chk = (raw["ku_val"] not in ["なし", "出場しない"]); ku_val = raw["ku_val"] if ku_chk else ""
                     
-                    # 復活: 矛盾チェック (組手)
                     is_sub_or_none = (ku_val == "補" or ku_val == "なし" or ku_val == "出場しない" or ku_val == "補欠")
                     if is_sub_or_none and raw["rank_ku"]:
                         st.error(f"❌ {raw['name']} 個人組手: 「{ku_val}」ですが順位が入力されています。順位を削除してください。")
