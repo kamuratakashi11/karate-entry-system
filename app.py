@@ -683,33 +683,36 @@ def school_page(s_id):
 
         if st.button("💾 名簿を保存して更新", type="primary"):
             
-            # ★変更箇所: どんな形であれ「空っぽ」であるかを厳格に判定する関数
-            def is_empty_val(val):
+            # ★変更箇所: 完全に空の行を判定して削除するための関数
+            def is_blank(val):
                 if pd.isna(val): return True
                 s = str(val).strip().lower()
-                # 0も未選択とみなす（学年は1, 2, 3のみのため）
-                if s in ["", "nan", "none", "<na>", "nat", "0"]: return True
+                if s in ["", "nan", "none", "<na>", "nat"]: return True
                 return False
 
-            mask_name = edited_mem_df["name"].apply(is_empty_val)
-            mask_sex = edited_mem_df["sex"].apply(is_empty_val)
-            mask_grade = edited_mem_df["grade"].apply(is_empty_val)
+            mask_name = edited_mem_df["name"].apply(is_blank)
+            mask_sex = edited_mem_df["sex"].apply(is_blank)
+            mask_grade = edited_mem_df["grade"].apply(is_blank)
 
             # まったく入力がない空白行は無視（削除）
             is_empty_row = mask_name & mask_sex & mask_grade
             edited_mem_df = edited_mem_df[~is_empty_row]
 
-            # 削除後の残りの行に対して、必須チェックを行う
-            mask_name = edited_mem_df["name"].apply(is_empty_val)
-            mask_sex = edited_mem_df["sex"].apply(is_empty_val)
-            mask_grade = edited_mem_df["grade"].apply(is_empty_val)
-
-            if mask_name.any():
-                st.error("❌ 氏名が未入力の行があります。左端の番号をクリックしてDeleteキーで行を削除するか、氏名を入力してください。"); return
-            if mask_sex.any():
-                st.error("❌ 性別が未選択の行があります。左端の番号をクリックしてDeleteキーで行を削除するか、性別を選択してください。"); return
-            if mask_grade.any():
-                st.error("❌ 学年が未選択の行があります。左端の番号をクリックしてDeleteキーで行を削除するか、学年を選択してください。"); return
+            # 削除後の残りの行に対して、厳密な値のチェックを行う
+            if not edited_mem_df.empty:
+                # 1. 氏名の空チェック
+                if edited_mem_df["name"].apply(is_blank).any():
+                    st.error("❌ 氏名が未入力の行があります。左端の番号をクリックしてDeleteキーで行を削除するか、氏名を入力してください。"); return
+                
+                # 2. 性別の厳密チェック（男子・女子のみ許可）
+                valid_sex = ["男子", "女子"]
+                if not edited_mem_df["sex"].isin(valid_sex).all():
+                    st.error("❌ 性別が「男子」または「女子」以外（未選択など）になっている行があります。正しく選択してください。"); return
+                    
+                # 3. 学年の厳密チェック（1, 2, 3のみ許可）
+                valid_grades = [1, 2, 3, 1.0, 2.0, 3.0, "1", "2", "3"]
+                if not edited_mem_df["grade"].isin(valid_grades).all():
+                    st.error("❌ 学年が「1」「2」「3」以外（未選択など）になっている行があります。正しく選択してください。"); return
             
             with st.spinner("💾 データを保存しています..."):
                 create_backup() 
