@@ -1029,7 +1029,7 @@ def admin_page():
 
 def main():
     st.set_page_config(page_title="Entry System v2", layout="wide")
-    st.title("🥋 エントリーシステム v2 (Sandbox)")
+    st.title("🥋 高体連空手エントリーシステム")
     
     # Top Menu Navigation (Persistence)
     top_menu_opts = ["🏠 学校ログイン", "🆕 新規登録", "🔧 管理者"]
@@ -1090,5 +1090,6 @@ def main():
 
     elif top_nav == "🔧 管理者":
         admin_page()
+
 
 if __name__ == "__main__": main()
