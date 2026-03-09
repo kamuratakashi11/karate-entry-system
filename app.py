@@ -27,7 +27,8 @@ KEY_FILE = 'secrets.json'
 SHEET_NAME = 'tournament_db' 
 V2_PREFIX = "v2_" 
 
-MEMBERS_COLS = ["school_id", "name", "sex", "grade", "dob", "jkf_no", "active"]
+# 復活: display_order を追加
+MEMBERS_COLS = ["school_id", "name", "sex", "grade", "dob", "jkf_no", "display_order", "active"]
 
 def to_half_width(text):
     if not text: return ""
@@ -130,7 +131,7 @@ def get_worksheet_safe(tab_name):
     return ws
 
 # ---------------------------------------------------------
-# 3. データ操作 (★ここだけを安全に改修★)
+# 3. データ操作 (分割保存対応版)
 # ---------------------------------------------------------
 def load_json(tab_name, default):
     target_tab = f"{V2_PREFIX}{tab_name}"
@@ -140,14 +141,12 @@ def load_json(tab_name, default):
         
         if not recs: return default
         
-        # 従来のA1セル保存データ（旧仕様）との互換性チェック
         if len(recs) == 1 and len(recs[0]) >= 1:
             val = str(recs[0][0])
             if val.startswith("{") or val.startswith("["):
                 parsed = json.loads(val)
                 return parsed if parsed is not None else default
         
-        # 新仕様（キーごとに1行ずつ分割保存されたデータ）の読み込み
         result = {}
         for row in recs:
             if len(row) >= 2:
@@ -156,7 +155,7 @@ def load_json(tab_name, default):
                 try:
                     result[key] = json.loads(val_str)
                 except:
-                    result[key] = val_str # JSON変換できなければそのまま
+                    result[key] = val_str
         return result if result else default
     except: return default
 
@@ -164,13 +163,11 @@ def save_json(tab_name, data):
     target_tab = f"{V2_PREFIX}{tab_name}"
     ws = get_worksheet_safe(target_tab)
     
-    # 万が一辞書型(dict)以外が渡された場合は、従来通りA1セルに保存
     if not isinstance(data, dict):
         ws.clear()
         ws.update_acell('A1', json.dumps(data, ensure_ascii=False))
         return
 
-    # 辞書型の場合は、キーごとに1行ずつに分割して保存（パンク防止）
     rows = []
     for k, v in data.items():
         rows.append([str(k), json.dumps(v, ensure_ascii=False)])
@@ -195,6 +192,7 @@ def load_members_master(force_reload=False):
     df['grade'] = pd.to_numeric(df['grade'], errors='coerce').fillna(0).astype(int)
     df['jkf_no'] = df['jkf_no'].astype(str).replace('nan', '')
     df['dob'] = df['dob'].astype(str).replace('nan', '')
+    df['display_order'] = df['display_order'].astype(str).replace('nan', '') # 復活
     df = df[MEMBERS_COLS]
     st.session_state["v2_master_cache"] = df
     return df
@@ -204,6 +202,7 @@ def save_members_master(df):
     df = df.fillna("")
     df['jkf_no'] = df['jkf_no'].astype(str)
     df['dob'] = df['dob'].astype(str)
+    df['display_order'] = df['display_order'].astype(str) # 復活
     for c in MEMBERS_COLS:
         if c not in df.columns: df[c] = ""
     df_to_save = df[MEMBERS_COLS]
@@ -408,10 +407,20 @@ def generate_excel(school_id, school_data, members_df, t_id, t_conf):
     cols = coords["cols"]
     members_df['sex_rank'] = members_df['sex'].map({'男子': 0, '女子': 1})
     members_df['grade_rank'] = members_df['grade'].map({3: 0, 2: 1, 1: 2})
+    
+    # 復活: Excel出力時のソート機能
+    def get_sort_key(row):
+        try: 
+            if pd.notna(row['display_order']) and str(row['display_order']).strip() != "":
+                return float(row['display_order'])
+            return 999999.0
+        except: return 999999.0
+    members_df['custom_order'] = members_df.apply(get_sort_key, axis=1)
+
     entries = members_df[
         (members_df['last_team_kata_chk']==True) | (members_df['last_team_kumi_chk']==True) |
         (members_df['last_kata_chk']==True) | (members_df['last_kumi_chk']==True)
-    ].sort_values(by=['sex_rank', 'grade_rank', 'name'])
+    ].sort_values(by=['custom_order', 'sex_rank', 'grade_rank', 'name'])
 
     for i, (_, row) in enumerate(entries.iterrows()):
         r = coords["start_row"] + (i // coords["cap"] * coords["offset"]) + (i % coords["cap"])
@@ -602,17 +611,10 @@ def school_page(s_id):
         if f"v2_entry_cache_{active_tid}" in st.session_state: del st.session_state[f"v2_entry_cache_{active_tid}"]
         st.success("最新データを読み込みました"); time.sleep(0.5); st.rerun()
 
-    # School Page Navigation Logic (Persistence)
     menu = ["① 顧問登録", "② 部員名簿登録", "③ 大会エントリー"]
-    
-    # Initialize session state for this menu if not exists
-    if "school_menu_idx" not in st.session_state:
-        st.session_state["school_menu_idx"] = 0
-    
-    # Radio button with explicit index
+    if "school_menu_idx" not in st.session_state: st.session_state["school_menu_idx"] = 0
     selected_view = st.radio("メニュー選択", menu, index=st.session_state["school_menu_idx"], key="school_menu_radio", horizontal=True, label_visibility="collapsed")
     
-    # Update state immediately
     current_idx = menu.index(selected_view)
     if st.session_state["school_menu_idx"] != current_idx:
         st.session_state["school_menu_idx"] = current_idx
@@ -662,13 +664,16 @@ def school_page(s_id):
     elif selected_view == "② 部員名簿登録":
         st.warning("⚠️ **重要:** 編集内容は自動保存されません。変更後は必ず下の **『💾 名簿を保存して更新』** ボタンを押してください。")
         st.info("💡 ここは「全大会共通」の名簿です。")
+        st.caption("💡 **表示順について:** 「No.」列に数字を入力すると、エントリー画面でその順番に表示されます（1, 2, 3...）。指定がない場合は、従来通り学年・名前順になります。")
         
         master = load_members_master(force_reload=False)
         my_m = master[master['school_id']==s_id].copy()
         other_m = master[master['school_id']!=s_id].copy()
         
-        disp_df = my_m[["name", "sex", "grade", "dob", "jkf_no"]].copy()
+        # 復活: disp_df に display_order を追加
+        disp_df = my_m[["display_order", "name", "sex", "grade", "dob", "jkf_no"]].copy()
         col_config_mem = {
+            "display_order": st.column_config.NumberColumn("No.", help="表示順（任意）", step=1, format="%d"),
             "name": st.column_config.TextColumn("氏名"), 
             "sex": st.column_config.SelectboxColumn("性別", options=["男子", "女子"], required=True),
             "grade": st.column_config.SelectboxColumn("学年", options=[1, 2, 3], required=True),
@@ -693,6 +698,10 @@ def school_page(s_id):
                 create_backup() 
                 edited_mem_df["school_id"] = s_id
                 edited_mem_df["active"] = True
+                
+                # 復活: No.列の値を文字列に変換して保存
+                edited_mem_df['display_order'] = edited_mem_df['display_order'].apply(lambda x: str(int(x)) if pd.notnull(x) and str(x).strip() != "" else "")
+
                 for c in MEMBERS_COLS:
                     if c not in edited_mem_df.columns: edited_mem_df[c] = ""
                 new_master = pd.concat([other_m, edited_mem_df[MEMBERS_COLS]], ignore_index=True)
@@ -705,18 +714,27 @@ def school_page(s_id):
         master_check = load_members_master(force_reload=False)
         my_check = master_check[master_check['school_id']==s_id]
         
-        rename_map = {'grade': '学年', 'name': '氏名', 'jkf_no': 'JKF番号'}
+        rename_map = {'display_order': 'No.', 'grade': '学年', 'name': '氏名', 'jkf_no': 'JKF番号'}
         
+        # 復活: 確認リストのソートロジック
+        def sort_key(row):
+            try: 
+                if pd.notna(row['display_order']) and str(row['display_order']).strip() != "":
+                    return float(row['display_order'])
+                return 999999.0
+            except: return 999999.0
+        my_check['sort_k'] = my_check.apply(sort_key, axis=1)
+
         c_male, c_female = st.columns(2)
         with c_male:
             st.markdown("###### 🚹 男子部員")
-            m_df = my_check[my_check['sex'] == '男子'].sort_values(by=['grade', 'name'], ascending=[False, True])
-            if not m_df.empty: st.dataframe(m_df[['grade','name','jkf_no']].rename(columns=rename_map), hide_index=True, use_container_width=True)
+            m_df = my_check[my_check['sex'] == '男子'].sort_values(by=['sort_k', 'grade', 'name'], ascending=[True, False, True])
+            if not m_df.empty: st.dataframe(m_df[['display_order', 'grade','name','jkf_no']].rename(columns=rename_map), hide_index=True, use_container_width=True)
             else: st.caption("登録なし")
         with c_female:
             st.markdown("###### 🚺 女子部員")
-            w_df = my_check[my_check['sex'] == '女子'].sort_values(by=['grade', 'name'], ascending=[False, True])
-            if not w_df.empty: st.dataframe(w_df[['grade','name','jkf_no']].rename(columns=rename_map), hide_index=True, use_container_width=True)
+            w_df = my_check[my_check['sex'] == '女子'].sort_values(by=['sort_k', 'grade', 'name'], ascending=[True, False, True])
+            if not w_df.empty: st.dataframe(w_df[['display_order', 'grade','name','jkf_no']].rename(columns=rename_map), hide_index=True, use_container_width=True)
             else: st.caption("登録なし")
 
     elif selected_view == "③ 大会エントリー":
@@ -737,9 +755,18 @@ def school_page(s_id):
         merged = get_merged_data(s_id, active_tid)
         if merged.empty: st.warning("エントリー可能な部員がいません。名簿を登録してください。"); return
         
+        # 復活: エントリー画面のソートロジック
         merged['sex_rank'] = merged['sex'].map({'男子': 0, '女子': 1})
         merged['grade_rank'] = merged['grade'].map({3: 0, 2: 1, 1: 2})
-        valid_members = merged[merged['grade'].isin(target_grades)].sort_values(by=['sex_rank', 'grade_rank', 'name']).copy()
+        def get_sort_key_ent(row):
+            try: 
+                if pd.notna(row['display_order']) and str(row['display_order']).strip() != "":
+                    return float(row['display_order'])
+                return 999999.0
+            except: return 999999.0
+        merged['custom_order'] = merged.apply(get_sort_key_ent, axis=1)
+        
+        valid_members = merged[merged['grade'].isin(target_grades)].sort_values(by=['custom_order', 'sex_rank', 'grade_rank', 'name']).copy()
         
         entries_update = load_entries(active_tid, force_reload=False)
         meta_key = f"_meta_{s_id}"
@@ -775,29 +802,36 @@ def school_page(s_id):
                 name_style = 'background-color:#e8f5e9; color:#1b5e20; padding:2px 6px; border-radius:4px; font-weight:bold;' if r['sex'] == "男子" else 'background-color:#ffebee; color:#b71c1c; padding:2px 6px; border-radius:4px; font-weight:bold;'
                 c = st.columns([1.7, 1.4, 1.4, 0.1, 3.1, 3.1])
                 c[0].markdown(f'<span style="{name_style}">{r["grade"]}年 {r["name"]}</span>', unsafe_allow_html=True)
+                
+                # 変更: ラジオボタンの順序を "なし", "正", "補" に変更
                 def_tk = r.get("last_team_kata_role", "なし"); opts_tk = ["なし", "正", "補"]
                 if def_tk not in opts_tk: def_tk = "なし"
                 val_tk = c[1].radio(f"tk_{uid}", opts_tk, index=opts_tk.index(def_tk), horizontal=True, label_visibility="collapsed")
+                
                 mode = m_mode if r['sex']=="男子" else w_mode
                 if mode != "none":
                     def_tku = r.get("last_team_kumi_role", "なし"); opts_tku = ["なし", "正", "補"]
                     if def_tku not in opts_tku: def_tku = "なし"
                     val_tku = c[2].radio(f"tku_{uid}", opts_tku, index=opts_tku.index(def_tku), horizontal=True, label_visibility="collapsed")
                 else: val_tku = "なし"; c[2].caption("-")
+                
+                # 変更: ラジオボタンの順序を "なし", "正", "補", "シード" に変更
                 def_k = r.get("last_kata_val", "なし")
-                if t_conf["type"] == "standard": opts_k = ["なし", "シード", "正", "補"]
+                if t_conf["type"] == "standard": opts_k = ["なし", "正", "補", "シード"]
                 else: opts_k = ["なし", "正", "補"]
                 if def_k not in opts_k: def_k = "なし"
+                
                 ck1, ck2 = c[4].columns([1.5, 1])
                 val_k = ck1.radio(f"k_{uid}", opts_k, index=opts_k.index(def_k), horizontal=True, label_visibility="collapsed")
                 rank_k = ck2.text_input("順位", r.get("last_kata_rank",""), key=f"rk_k_{uid}", label_visibility="collapsed", placeholder="順位")
+                
                 c5a, c5b = c[5].columns([1.8, 1])
                 w_key = "weights_m" if r['sex'] == "男子" else "weights_w"
                 w_list = ["出場しない"] + [f"{w.strip()}kg級" for w in t_conf.get(w_key, "").split(",")] + ["補欠"]
                 raw_kumi = r.get("last_kumi_val")
                 def_val = str(raw_kumi) if raw_kumi else "出場しない"
                 if t_conf["type"] == "standard":
-                    opts_ku = ["なし", "シード", "正", "補"]
+                    opts_ku = ["なし", "正", "補", "シード"]
                     if def_val == "出場しない" or def_val not in opts_ku: def_val = "なし"
                     ku_val = c5a.radio(f"ku_{uid}", opts_ku, index=opts_ku.index(def_val), horizontal=True, label_visibility="collapsed")
                 else:
@@ -814,9 +848,15 @@ def school_page(s_id):
 
                 for uid, raw in form_buffer.items():
                     k_chk = (raw["val_k"] != "なし"); k_val = raw["val_k"] if k_chk else ""
+                    
+                    # 復活: 矛盾チェック (形)
+                    if (k_val == "補" or k_val == "なし") and raw["rank_k"]:
+                        st.error(f"❌ {raw['name']} 個人形: 「{k_val}」ですが順位が入力されています。順位を削除してください。")
+                        has_error = True
+                        
                     if k_chk:
                         if (k_val == "正" or k_val == "シード") and not raw["rank_k"]:
-                            st.error(f"❌ {uid} 個人形: {k_val}選手の実績順位が入力されていません。"); has_error = True
+                            st.error(f"❌ {raw['name']} 個人形: {k_val}選手の実績順位が入力されていません。"); has_error = True
                         
                         if (k_val == "正" or k_val == "シード") and raw["rank_k"]:
                             check_key = f"{raw['sex']}_kata_{k_val}"
@@ -826,11 +866,18 @@ def school_page(s_id):
                             duplicate_checker[check_key][clean_rank].append(raw["name"])
 
                     ku_chk = (raw["ku_val"] not in ["なし", "出場しない"]); ku_val = raw["ku_val"] if ku_chk else ""
+                    
+                    # 復活: 矛盾チェック (組手)
+                    is_sub_or_none = (ku_val == "補" or ku_val == "なし" or ku_val == "出場しない" or ku_val == "補欠")
+                    if is_sub_or_none and raw["rank_ku"]:
+                        st.error(f"❌ {raw['name']} 個人組手: 「{ku_val}」ですが順位が入力されています。順位を削除してください。")
+                        has_error = True
+                        
                     if ku_chk:
                         is_reg = (t_conf["type"] == "weight" and ku_val != "補欠") or (t_conf["type"] == "standard" and ku_val == "正")
                         is_seed = (t_conf["type"] == "standard" and ku_val == "シード")
                         if (is_reg or is_seed) and not raw["rank_ku"]:
-                            st.error(f"❌ {uid} 個人組手: 実績順位が入力されていません。"); has_error = True
+                            st.error(f"❌ {raw['name']} 個人組手: 実績順位が入力されていません。"); has_error = True
                         
                         if t_conf["type"] == "standard" and (is_reg or is_seed) and raw["rank_ku"]:
                             role_key = "シード" if is_seed else "正"
@@ -879,7 +926,6 @@ def admin_page():
     st.title("🔧 管理者画面 (v2)")
     conf = load_conf()
     
-    # ログイン維持のためのState確認
     if "admin_ok" not in st.session_state:
         st.session_state["admin_ok"] = False
 
@@ -892,17 +938,14 @@ def admin_page():
                 st.rerun()
             else:
                 st.error("パスワードが違います")
-        return # ログインしていない場合はここで終了
+        return
 
-    # 以下、ログイン後の表示
     auth = load_auth()
     
-    # Radio Menu for Admin
     admin_menu_opts = ["🏆 大会設定", "📥 データ出力", "🏫 アカウント(編集)", "📅 年次処理"]
     if "admin_menu_idx" not in st.session_state: st.session_state["admin_menu_idx"] = 0
     admin_tab = st.radio("メニュー", admin_menu_opts, index=st.session_state["admin_menu_idx"], key="admin_menu_radio", horizontal=True)
     
-    # Update State
     curr_adm_idx = admin_menu_opts.index(admin_tab)
     if st.session_state["admin_menu_idx"] != curr_adm_idx:
         st.session_state["admin_menu_idx"] = curr_adm_idx
@@ -948,7 +991,7 @@ def admin_page():
                         save_conf(conf)
                         st.success("パスワードを変更しました。再ログインしてください。")
                         time.sleep(2)
-                        st.session_state["admin_ok"] = False # 強制ログアウト
+                        st.session_state["admin_ok"] = False
                         st.rerun()
                     else:
                         st.error("パスワードは4文字以上にしてください")
@@ -1063,14 +1106,10 @@ def main():
     st.set_page_config(page_title="Entry System v2", layout="wide")
     st.title("🥋 高体連空手エントリーシステム")
     
-    # Top Menu Navigation (Persistence)
     top_menu_opts = ["🏠 学校ログイン", "🆕 新規登録", "🔧 管理者"]
     if "top_menu_idx" not in st.session_state: st.session_state["top_menu_idx"] = 0
-    
-    # Top Navigation Bar (Horizontal Radio)
     top_nav = st.radio("Main Navigation", top_menu_opts, index=st.session_state["top_menu_idx"], key="top_menu_radio", horizontal=True, label_visibility="collapsed")
     
-    # Update State logic
     curr_top_idx = top_menu_opts.index(top_nav)
     if st.session_state["top_menu_idx"] != curr_top_idx:
         st.session_state["top_menu_idx"] = curr_top_idx
@@ -1078,7 +1117,6 @@ def main():
 
     auth = load_auth()
 
-    # View Switching
     if top_nav == "🏠 学校ログイン":
         if "logged_in_school" in st.session_state:
             school_page(st.session_state["logged_in_school"])
