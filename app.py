@@ -415,7 +415,6 @@ def generate_excel(school_id, school_data, members_df, t_id, t_conf):
         except: return 999999.0
     members_df['custom_order'] = members_df.apply(get_sort_key, axis=1)
 
-    # ★変更箇所: エントリー有無に関わらず、大会の対象学年の生徒全員を出力する
     target_grades = [int(g) for g in t_conf.get('grades', [1, 2, 3])]
     entries = members_df[members_df['grade'].isin(target_grades)].sort_values(by=['custom_order', 'sex_rank', 'grade_rank', 'name'])
 
@@ -683,25 +682,34 @@ def school_page(s_id):
         st.caption("💡 **削除するには:** 行を選択し、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
 
         if st.button("💾 名簿を保存して更新", type="primary"):
-            # ★変更箇所: まったく入力がない空白行を無視する
-            is_empty_row = (
-                (edited_mem_df["name"].isna() | (edited_mem_df["name"].astype(str).str.strip() == "")) &
-                (edited_mem_df["sex"].isna() | (edited_mem_df["sex"].astype(str).str.strip() == "")) &
-                (edited_mem_df["grade"].isna() | (edited_mem_df["grade"].astype(str).str.strip() == ""))
-            )
+            
+            # ★変更箇所: どんな形であれ「空っぽ」であるかを厳格に判定する関数
+            def is_empty_val(val):
+                if pd.isna(val): return True
+                s = str(val).strip().lower()
+                # 0も未選択とみなす（学年は1, 2, 3のみのため）
+                if s in ["", "nan", "none", "<na>", "nat", "0"]: return True
+                return False
+
+            mask_name = edited_mem_df["name"].apply(is_empty_val)
+            mask_sex = edited_mem_df["sex"].apply(is_empty_val)
+            mask_grade = edited_mem_df["grade"].apply(is_empty_val)
+
+            # まったく入力がない空白行は無視（削除）
+            is_empty_row = mask_name & mask_sex & mask_grade
             edited_mem_df = edited_mem_df[~is_empty_row]
 
-            # ★変更箇所: 必須項目の厳格な空チェック（NaNと空文字の両方を検知）
-            name_empty = edited_mem_df["name"].isna() | (edited_mem_df["name"].astype(str).str.strip() == "")
-            sex_empty = edited_mem_df["sex"].isna() | (edited_mem_df["sex"].astype(str).str.strip() == "")
-            grade_empty = edited_mem_df["grade"].isna() | (edited_mem_df["grade"].astype(str).str.strip() == "")
+            # 削除後の残りの行に対して、必須チェックを行う
+            mask_name = edited_mem_df["name"].apply(is_empty_val)
+            mask_sex = edited_mem_df["sex"].apply(is_empty_val)
+            mask_grade = edited_mem_df["grade"].apply(is_empty_val)
 
-            if name_empty.any():
-                st.error("❌ 氏名が未入力の行があります。行を削除するか、氏名を入力してください。"); return
-            if sex_empty.any():
-                st.error("❌ 性別が未選択の行があります。行を削除するか、性別を選択してください。"); return
-            if grade_empty.any():
-                st.error("❌ 学年が未選択の行があります。行を削除するか、学年を選択してください。"); return
+            if mask_name.any():
+                st.error("❌ 氏名が未入力の行があります。左端の番号をクリックしてDeleteキーで行を削除するか、氏名を入力してください。"); return
+            if mask_sex.any():
+                st.error("❌ 性別が未選択の行があります。左端の番号をクリックしてDeleteキーで行を削除するか、性別を選択してください。"); return
+            if mask_grade.any():
+                st.error("❌ 学年が未選択の行があります。左端の番号をクリックしてDeleteキーで行を削除するか、学年を選択してください。"); return
             
             with st.spinner("💾 データを保存しています..."):
                 create_backup() 
