@@ -130,22 +130,54 @@ def get_worksheet_safe(tab_name):
     return ws
 
 # ---------------------------------------------------------
-# 3. データ操作
+# 3. データ操作 (★ここだけを安全に改修★)
 # ---------------------------------------------------------
 def load_json(tab_name, default):
     target_tab = f"{V2_PREFIX}{tab_name}"
     try:
         ws = get_worksheet_safe(target_tab)
-        val = ws.acell('A1').value
-        if not val: return default
-        parsed = json.loads(val)
-        return parsed if parsed is not None else default
+        recs = ws.get_all_values()
+        
+        if not recs: return default
+        
+        # 従来のA1セル保存データ（旧仕様）との互換性チェック
+        if len(recs) == 1 and len(recs[0]) >= 1:
+            val = str(recs[0][0])
+            if val.startswith("{") or val.startswith("["):
+                parsed = json.loads(val)
+                return parsed if parsed is not None else default
+        
+        # 新仕様（キーごとに1行ずつ分割保存されたデータ）の読み込み
+        result = {}
+        for row in recs:
+            if len(row) >= 2:
+                key = row[0]
+                val_str = row[1]
+                try:
+                    result[key] = json.loads(val_str)
+                except:
+                    result[key] = val_str # JSON変換できなければそのまま
+        return result if result else default
     except: return default
 
 def save_json(tab_name, data):
     target_tab = f"{V2_PREFIX}{tab_name}"
     ws = get_worksheet_safe(target_tab)
-    ws.update_acell('A1', json.dumps(data, ensure_ascii=False))
+    
+    # 万が一辞書型(dict)以外が渡された場合は、従来通りA1セルに保存
+    if not isinstance(data, dict):
+        ws.clear()
+        ws.update_acell('A1', json.dumps(data, ensure_ascii=False))
+        return
+
+    # 辞書型の場合は、キーごとに1行ずつに分割して保存（パンク防止）
+    rows = []
+    for k, v in data.items():
+        rows.append([str(k), json.dumps(v, ensure_ascii=False)])
+    
+    ws.clear()
+    if rows:
+        ws.update(rows)
 
 def load_members_master(force_reload=False):
     if not force_reload and "v2_master_cache" in st.session_state:
@@ -1090,6 +1122,5 @@ def main():
 
     elif top_nav == "🔧 管理者":
         admin_page()
-
 
 if __name__ == "__main__": main()
