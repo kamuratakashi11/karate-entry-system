@@ -682,38 +682,6 @@ def school_page(s_id):
         st.caption("💡 **削除するには:** 行を選択し、キーボードの **Delete** キーを押してください。その後、保存ボタンで確定します。")
 
         if st.button("💾 名簿を保存して更新", type="primary"):
-            
-            # ★変更箇所: 完全に空の行を判定して削除するための関数
-            def is_blank(val):
-                if pd.isna(val): return True
-                s = str(val).strip().lower()
-                if s in ["", "nan", "none", "<na>", "nat"]: return True
-                return False
-
-            mask_name = edited_mem_df["name"].apply(is_blank)
-            mask_sex = edited_mem_df["sex"].apply(is_blank)
-            mask_grade = edited_mem_df["grade"].apply(is_blank)
-
-            # まったく入力がない空白行は無視（削除）
-            is_empty_row = mask_name & mask_sex & mask_grade
-            edited_mem_df = edited_mem_df[~is_empty_row]
-
-            # 削除後の残りの行に対して、厳密な値のチェックを行う
-            if not edited_mem_df.empty:
-                # 1. 氏名の空チェック
-                if edited_mem_df["name"].apply(is_blank).any():
-                    st.error("❌ 氏名が未入力の行があります。左端の番号をクリックしてDeleteキーで行を削除するか、氏名を入力してください。"); return
-                
-                # 2. 性別の厳密チェック（男子・女子のみ許可）
-                valid_sex = ["男子", "女子"]
-                if not edited_mem_df["sex"].isin(valid_sex).all():
-                    st.error("❌ 性別が「男子」または「女子」以外（未選択など）になっている行があります。正しく選択してください。"); return
-                    
-                # 3. 学年の厳密チェック（1, 2, 3のみ許可）
-                valid_grades = [1, 2, 3, 1.0, 2.0, 3.0, "1", "2", "3"]
-                if not edited_mem_df["grade"].isin(valid_grades).all():
-                    st.error("❌ 学年が「1」「2」「3」以外（未選択など）になっている行があります。正しく選択してください。"); return
-            
             with st.spinner("💾 データを保存しています..."):
                 create_backup() 
                 edited_mem_df["school_id"] = s_id
@@ -1136,15 +1104,27 @@ def main():
         else:
             st.info("💡 学校を選択してログインしてください。")
             with st.form("login_form"):
-                name_map = {f"{v.get('base_name')}高等学校": k for k, v in auth.items()}
-                s_name = st.selectbox("学校名", list(name_map.keys()))
+                
+                # ★変更: 学校番号(school_no)順にソートする
+                sorted_auth = sorted(auth.items(), key=lambda x: to_safe_int(x[1].get('school_no', 999)))
+                name_map = {f"{v.get('base_name')}高等学校": k for k, v in sorted_auth}
+                
+                # ★変更: デフォルトの選択肢を先頭に追加する
+                placeholder = "（こちらから選択。ない場合は新規登録をしてください）"
+                options = [placeholder] + list(name_map.keys())
+                
+                s_name = st.selectbox("学校名", options)
                 pw = st.text_input("パスワード", type="password")
+                
                 if st.form_submit_button("ログイン"):
-                    if s_name:
+                    # プレースホルダーが選択されたままの場合はエラーを出す
+                    if s_name == placeholder:
+                        st.error("❌ 学校を選択してください。")
+                    elif s_name:
                         sid = name_map[s_name]
                         if auth[sid]["password"] == pw:
                             st.session_state["logged_in_school"] = sid; st.rerun()
-                        else: st.error("パスワードが違います")
+                        else: st.error("❌ パスワードが違います")
 
     elif top_nav == "🆕 新規登録":
         st.markdown("###### 新規登録")
