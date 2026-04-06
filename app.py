@@ -651,10 +651,17 @@ def school_page(s_id):
             with st.spinner("💾 データを保存しています..."):
                 new_advs = edited_adv_df.to_dict(orient="records")
                 new_advs = [x for x in new_advs if x["name"]]
-                s_data["principal"] = np
-                s_data["advisors"] = new_advs
-                auth[s_id] = s_data
-                save_auth(auth); time.sleep(1)
+                
+                # ★追加箇所: 他校の最新データを再取得して上書きを防止
+                load_auth_cached.clear()
+                latest_auth = load_auth()
+                
+                current_s_data = latest_auth.get(s_id, s_data)
+                current_s_data["principal"] = np
+                current_s_data["advisors"] = new_advs
+                latest_auth[s_id] = current_s_data
+                
+                save_auth(latest_auth); time.sleep(1)
             st.success("✅ 保存しました！"); time.sleep(2); st.rerun()
 
     elif selected_view == "② 部員名簿登録":
@@ -664,7 +671,6 @@ def school_page(s_id):
         
         master = load_members_master(force_reload=False)
         my_m = master[master['school_id']==s_id].copy()
-        other_m = master[master['school_id']!=s_id].copy()
         
         disp_df = my_m[["display_order", "name", "sex", "grade", "dob", "jkf_no"]].copy()
         col_config_mem = {
@@ -691,7 +697,12 @@ def school_page(s_id):
 
                 for c in MEMBERS_COLS:
                     if c not in edited_mem_df.columns: edited_mem_df[c] = ""
-                new_master = pd.concat([other_m, edited_mem_df[MEMBERS_COLS]], ignore_index=True)
+                    
+                # ★追加箇所: 他校の最新データを再取得して上書きを防止
+                current_master = load_members_master(force_reload=True)
+                latest_other_m = current_master[current_master['school_id'] != s_id].copy()
+                
+                new_master = pd.concat([latest_other_m, edited_mem_df[MEMBERS_COLS]], ignore_index=True)
                 save_members_master(new_master)
                 time.sleep(1)
             st.success("✅ 名簿を更新しました（自動バックアップ完了）"); time.sleep(2); st.rerun()
@@ -1105,11 +1116,9 @@ def main():
             st.info("💡 学校を選択してログインしてください。")
             with st.form("login_form"):
                 
-                # ★変更: 学校番号(school_no)順にソートする
                 sorted_auth = sorted(auth.items(), key=lambda x: to_safe_int(x[1].get('school_no', 999)))
                 name_map = {f"{v.get('base_name')}高等学校": k for k, v in sorted_auth}
                 
-                # ★変更: デフォルトの選択肢を先頭に追加する
                 placeholder = "（こちらから選択。ない場合は新規登録をしてください）"
                 options = [placeholder] + list(name_map.keys())
                 
@@ -1117,7 +1126,6 @@ def main():
                 pw = st.text_input("パスワード", type="password")
                 
                 if st.form_submit_button("ログイン"):
-                    # プレースホルダーが選択されたままの場合はエラーを出す
                     if s_name == placeholder:
                         st.error("❌ 学校を選択してください。")
                     elif s_name:
