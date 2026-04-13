@@ -29,7 +29,7 @@ KEY_FILE = 'secrets.json'
 SHEET_NAME = 'tournament_db' 
 V2_PREFIX = "v2_" 
 
-# ★追加：アップロード先のフォルダID
+# ★Googleドライブ保存先フォルダID
 UPLOAD_FOLDER_ID = "1n5CM_Jh9g3MiYfRU1yugdhSFWJZyhDdT"
 
 MEMBERS_COLS = ["school_id", "name", "sex", "grade", "dob", "jkf_no", "display_order", "active"]
@@ -115,7 +115,6 @@ def get_google_creds():
 def get_gsheet_client():
     return gspread.authorize(get_google_creds())
 
-# ★追加：Googleドライブ接続用
 def get_drive_service():
     return build('drive', 'v3', credentials=get_google_creds())
 
@@ -141,7 +140,7 @@ def get_worksheet_safe(tab_name):
     return ws
 
 # ---------------------------------------------------------
-# 3. データ操作 (分割保存・ファイルアップロード対応版)
+# 3. データ操作 (分割保存・ファイルアップロード)
 # ---------------------------------------------------------
 def load_json(tab_name, default):
     target_tab = f"{V2_PREFIX}{tab_name}"
@@ -935,6 +934,7 @@ def school_page(s_id):
                             time.sleep(1)
                     st.success("✅ 保存しました！"); time.sleep(2); st.rerun()
 
+        # ★追加：Excel出力ボタンとアップロード枠のUI
         st.markdown("---")
         st.markdown("#### 📥 申込書の出力と提出")
         st.info("出力したExcelファイルに公印を押し、PDFや画像にしてから右側の枠へ提出してください。")
