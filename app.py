@@ -135,7 +135,7 @@ def get_worksheet_safe(tab_name):
     return ws
 
 # ---------------------------------------------------------
-# 3. データ操作 (ここで前回ごっそり消してしまっていました！)
+# 3. データ操作 
 # ---------------------------------------------------------
 def load_json(tab_name, default):
     target_tab = f"{V2_PREFIX}{tab_name}"
@@ -417,25 +417,77 @@ def generate_excel(school_id, school_data, members_df, t_id, t_conf):
             safe_write(ws, (r, ku_c), txt, True)
     fname = f"申込書_{bn}.xlsx"; wb.save(fname); return fname, "成功"
 
+# ★大幅改修: マクロ入りテンプレート(tournament_macro_template.xlsm)への流し込み対応
 def generate_tournament_excel(all_data, t_type, auth_data):
+    template_file = "tournament_macro_template.xlsm"
+    sheets_data = {}
+    
+    for row in all_data:
+        name, sid, sex = row['name'], row['school_id'], row['sex']
+        s_data = auth_data.get(sid, {})
+        school_short = s_data.get("short_name", s_data.get("base_name", ""))
+        
+        # 個人形
+        if row.get('kata_chk'):
+            k_val = row.get('kata_val')
+            k_rank = row.get('kata_rank', '')
+            if k_val and k_val not in ['補', 'なし', '出場しない']:
+                sn = f"{sex}個人形"
+                rank_cell = k_rank if k_val == '正' else ''
+                seed_cell = k_rank if k_val == 'シード' else ''
+                if sn not in sheets_data: sheets_data[sn] = []
+                sheets_data[sn].append([rank_cell, name, school_short, seed_cell])
+                
+        # 個人組手
+        if row.get('kumi_chk'):
+            ku_val = row.get('kumi_val')
+            ku_rank = row.get('kumi_rank', '')
+            if ku_val and ku_val not in ['補', 'なし', '出場しない']:
+                if t_type == 'standard':
+                    sn = f"{sex}個人組手"
+                    is_seed = (ku_val == 'シード')
+                    is_reg = (ku_val == '正')
+                else:
+                    sn = f"{sex}個人組手_{ku_val}"
+                    is_seed = False
+                    is_reg = True 
+                rank_cell = ku_rank if is_reg else ''
+                seed_cell = ku_rank if is_seed else ''
+                if sn not in sheets_data: sheets_data[sn] = []
+                sheets_data[sn].append([rank_cell, name, school_short, seed_cell])
+
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        sheets_data = {}
-        for row in all_data:
-            name, sid, sex = row['name'], row['school_id'], row['sex']
-            s_data = auth_data.get(sid, {}); school_short = s_data.get("short_name", s_data.get("base_name", ""))
-            if row.get('kata_chk') and row.get('kata_val') not in ['補', 'なし', '出場しない']:
-                sn = f"{sex}個人形"; rec = {"個人形_順位": row.get('kata_rank','') if row.get('kata_val')=='正' else '', "名前": name, "学校名": school_short, "シード順位": row.get('kata_rank','') if row.get('kata_val')=='シード' else ''}
-                if sn not in sheets_data: sheets_data[sn] = []
-                sheets_data[sn].append(rec)
-            if row.get('kumi_chk') and row.get('kumi_val') not in ['補', 'なし', '出場しない']:
-                sn = f"{sex}個人組手" if t_type=='standard' else f"{sex}個人組手_{row.get('kumi_val')}"
-                rec = {"個人組手_順位": row.get('kumi_rank','') if row.get('kumi_val')=='正' or t_type!='standard' else '', "名前": name, "学校名": school_short, "シード順位": row.get('kumi_rank','') if row.get('kumi_val')=='シード' else ''}
-                if sn not in sheets_data: sheets_data[sn] = []
-                sheets_data[sn].append(rec)
-        for sn in sorted(sheets_data.keys()):
-            pd.DataFrame(sheets_data[sn]).to_excel(writer, sheet_name=sn, index=False)
-    return output.getvalue()
+    has_template = os.path.exists(template_file)
+    
+    if has_template:
+        # keep_vba=True でマクロを破壊せずに追記
+        wb = openpyxl.load_workbook(template_file, keep_vba=True)
+        mime_type = "application/vnd.ms-excel.sheet.macroEnabled.12"
+        ext = "xlsm"
+    else:
+        wb = openpyxl.Workbook()
+        if wb.sheetnames: wb.remove(wb.active)
+        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ext = "xlsx"
+
+    # データをシートに流し込む
+    for s_name in sorted(sheets_data.keys()):
+        recs = sheets_data[s_name]
+        if s_name in wb.sheetnames:
+            ws = wb[s_name]
+            ws.delete_rows(1, ws.max_row) # 既存データをクリア
+        else:
+            ws = wb.create_sheet(s_name)
+        
+        # VBAマクロ用のヘッダー
+        ws.append(["順位", "名前", "学校名", "シード枠"])
+        for rec in recs:
+            ws.append(rec)
+            
+    if not wb.sheetnames: wb.create_sheet("データなし")
+        
+    wb.save(output)
+    return output.getvalue(), mime_type, ext
 
 def generate_summary_excel(master_df, entries, auth_data, t_type):
     rows = []
@@ -684,14 +736,26 @@ def admin_page():
                     ent = entries.get(f"{m['school_id']}_{m['name']}", {})
                     if ent.get("kata_chk") or ent.get("kumi_chk"):
                         row = m.to_dict(); row.update(ent); full_data.append(row)
-                st.session_state["xlsx_tour"] = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth)
+                
+                # ★ここが改修点: マクロ入りファイルの生成を呼び出し、拡張子とMIMEを受け取る
+                t_data, mime, ext = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth)
+                st.session_state["xlsx_tour"] = t_data
+                st.session_state["xlsx_tour_mime"] = mime
+                st.session_state["xlsx_tour_ext"] = ext
+                
                 st.session_state["xlsx_summ"] = generate_summary_excel(master, entries, auth, conf["tournaments"][tid]["type"])
                 st.session_state["xlsx_adv"] = generate_advisor_excel(load_schools(), auth)
                 st.session_state["xlsx_ts"] = datetime.datetime.now().strftime("%H:%M:%S")
+                
         if "xlsx_ts" in st.session_state:
             st.success(f"✅ 集計完了 ({st.session_state['xlsx_ts']})")
             c1, c2, c3 = st.columns(3)
-            c1.download_button("📥 トーナメントデータ", st.session_state["xlsx_tour"], "tournament.xlsx")
+            
+            # ★拡張子とMIMEを動的に設定（マクロの有無で .xlsm か .xlsx に変わる）
+            dl_file_name = f"tournament_data.{st.session_state.get('xlsx_tour_ext', 'xlsx')}"
+            dl_mime = st.session_state.get("xlsx_tour_mime", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            
+            c1.download_button("📥 トーナメントデータ\n(マクロ自動連携)", st.session_state["xlsx_tour"], dl_file_name, mime=dl_mime)
             c2.download_button("📊 参加校一覧集計", st.session_state["xlsx_summ"], "summary.xlsx")
             c3.download_button("👔 顧問リスト", st.session_state["xlsx_adv"], "advisors.xlsx")
             
