@@ -29,7 +29,7 @@ KEY_FILE = 'secrets.json'
 SHEET_NAME = 'tournament_db' 
 V2_PREFIX = "v2_" 
 # ★ステップ1で取得したURLをここに貼り付けてください
-GAS_WEBAPP_URL = https://script.google.com/macros/s/AKfycbwTegYveIaIKagvcsJBcLlxbjVx7siHoeUmh_3YrRSu9uOpvl6Uo8X3NifGinnzuxSA/exec
+GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwTegYveIaIKagvcsJBcLlxbjVx7siHoeUmh_3YrRSu9uOpvl6Uo8X3NifGinnzuxSA/exec"
 
 MEMBERS_COLS = ["school_id", "name", "sex", "grade", "dob", "jkf_no", "display_order", "active"]
 
