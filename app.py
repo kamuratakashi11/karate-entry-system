@@ -338,21 +338,21 @@ def generate_excel(school_id, school_data, members_df, t_id, t_conf):
             safe_write(ws, (r, ku_c), txt, True)
     fname = f"申込書_{bn}.xlsx"; wb.save(fname); return fname, "成功"
 
-# ★大幅改修: 4分割出力対応
+# ★大幅改修: 個人戦・団体戦の統合出力対応
 def generate_tournament_excel(all_data, t_type, auth_data, target_sex, target_category, template_file):
     sheets_data = {}
+    processed_schools = set() # 団体戦の重複登録防止用
     
     for row in all_data:
         name, sid, sex = row['name'], row['school_id'], row['sex']
         
-        # 指定された性別以外は弾く
         if sex != target_sex:
             continue
 
         s_data = auth_data.get(sid, {})
         school_short = s_data.get("short_name", s_data.get("base_name", ""))
         
-        # 形の処理
+        # --- 個人形 ---
         if target_category == "形" and row.get('kata_chk'):
             k_val = row.get('kata_val')
             k_rank = row.get('kata_rank', '')
@@ -363,8 +363,8 @@ def generate_tournament_excel(all_data, t_type, auth_data, target_sex, target_ca
                 if sn not in sheets_data: sheets_data[sn] = []
                 sheets_data[sn].append([rank_cell, name, school_short, seed_cell])
                 
-        # 組手の処理
-        if target_category == "組手" and row.get('kumi_chk'):
+        # --- 個人組手 ---
+        elif target_category == "組手" and row.get('kumi_chk'):
             ku_val = row.get('kumi_val')
             ku_rank = row.get('kumi_rank', '')
             if ku_val and ku_val not in ['補', 'なし', '出場しない']:
@@ -380,6 +380,24 @@ def generate_tournament_excel(all_data, t_type, auth_data, target_sex, target_ca
                 seed_cell = ku_rank if is_seed else ''
                 if sn not in sheets_data: sheets_data[sn] = []
                 sheets_data[sn].append([rank_cell, name, school_short, seed_cell])
+
+        # --- 団体形 ---
+        elif target_category == "団体形" and row.get('team_kata_chk'):
+            if sid not in processed_schools:
+                sn = f"{sex}団体形"
+                if sn not in sheets_data: sheets_data[sn] = []
+                # 名前欄に学校名を入れることで、VBAのエラーを回避
+                sheets_data[sn].append(["", school_short, school_short, ""]) 
+                processed_schools.add(sid)
+
+        # --- 団体組手 ---
+        elif target_category == "団体組手" and row.get('team_kumi_chk'):
+            if sid not in processed_schools:
+                sn = f"{sex}団体組手"
+                if sn not in sheets_data: sheets_data[sn] = []
+                # 名前欄に学校名を入れることで、VBAのエラーを回避
+                sheets_data[sn].append(["", school_short, school_short, ""]) 
+                processed_schools.add(sid)
 
     output = io.BytesIO()
     has_template = os.path.exists(template_file)
@@ -411,6 +429,7 @@ def generate_tournament_excel(all_data, t_type, auth_data, target_sex, target_ca
         
     wb.save(output)
     return output.getvalue(), mime_type, ext
+
 
 def generate_summary_excel(master_df, entries, auth_data, t_type):
     rows = []
@@ -657,10 +676,10 @@ def admin_page():
                 master = load_members_master(force_reload=True); entries = load_entries(tid, force_reload=True); full_data = []
                 for _, m in master.iterrows():
                     ent = entries.get(f"{m['school_id']}_{m['name']}", {})
-                    if ent.get("kata_chk") or ent.get("kumi_chk"):
+                    if ent.get("kata_chk") or ent.get("kumi_chk") or ent.get("team_kata_chk") or ent.get("team_kumi_chk"):
                         row = m.to_dict(); row.update(ent); full_data.append(row)
                 
-                # ★ここが改修点: 4つのマクロファイルを個別に生成
+                # --- 個人戦 4種目 ---
                 tm_m, mime_m, ext_m = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth, "男子", "組手", "template_kumite_m.xlsm")
                 st.session_state["xlsx_kumite_m"] = tm_m; st.session_state["mime_kumite_m"] = mime_m; st.session_state["ext_kumite_m"] = ext_m
                 
@@ -673,6 +692,19 @@ def admin_page():
                 tk_w, mime_kw, ext_kw = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth, "女子", "形", "template_kata_w.xlsm")
                 st.session_state["xlsx_kata_w"] = tk_w; st.session_state["mime_kata_w"] = mime_kw; st.session_state["ext_kata_w"] = ext_kw
                 
+                # --- 団体戦 4種目 ---
+                tt_km_m, mime_tkm_m, ext_tkm_m = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth, "男子", "団体組手", "template_team_kumite_m.xlsm")
+                st.session_state["xlsx_team_kumite_m"] = tt_km_m; st.session_state["mime_team_kumite_m"] = mime_tkm_m; st.session_state["ext_team_kumite_m"] = ext_tkm_m
+                
+                tt_km_w, mime_tkm_w, ext_tkm_w = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth, "女子", "団体組手", "template_team_kumite_w.xlsm")
+                st.session_state["xlsx_team_kumite_w"] = tt_km_w; st.session_state["mime_team_kumite_w"] = mime_tkm_w; st.session_state["ext_team_kumite_w"] = ext_tkm_w
+                
+                tt_kt_m, mime_tkt_m, ext_tkt_m = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth, "男子", "団体形", "template_team_kata_m.xlsm")
+                st.session_state["xlsx_team_kata_m"] = tt_kt_m; st.session_state["mime_team_kata_m"] = mime_tkt_m; st.session_state["ext_team_kata_m"] = ext_tkt_m
+                
+                tt_kt_w, mime_tkt_w, ext_tkt_w = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth, "女子", "団体形", "template_team_kata_w.xlsm")
+                st.session_state["xlsx_team_kata_w"] = tt_kt_w; st.session_state["mime_team_kata_w"] = mime_tkt_w; st.session_state["ext_team_kata_w"] = ext_tkt_w
+                
                 st.session_state["xlsx_summ"] = generate_summary_excel(master, entries, auth, conf["tournaments"][tid]["type"])
                 st.session_state["xlsx_adv"] = generate_advisor_excel(load_schools(), auth)
                 st.session_state["xlsx_ts"] = datetime.datetime.now().strftime("%H:%M:%S")
@@ -680,12 +712,19 @@ def admin_page():
         if "xlsx_ts" in st.session_state:
             st.success(f"✅ 集計完了 ({st.session_state['xlsx_ts']})")
             
-            st.markdown("##### 📥 種目別 トーナメント作成データ")
+            st.markdown("##### 📥 個人戦 トーナメント作成データ")
             col1, col2, col3, col4 = st.columns(4)
-            col1.download_button("🥋 男子組手", st.session_state["xlsx_kumite_m"], f"男子組手.{st.session_state['ext_kumite_m']}", mime=st.session_state["mime_kumite_m"])
-            col2.download_button("🥋 女子組手", st.session_state["xlsx_kumite_w"], f"女子組手.{st.session_state['ext_kumite_w']}", mime=st.session_state["mime_kumite_w"])
-            col3.download_button("🥋 男子形", st.session_state["xlsx_kata_m"], f"男子形.{st.session_state['ext_kata_m']}", mime=st.session_state["mime_kata_m"])
-            col4.download_button("🥋 女子形", st.session_state["xlsx_kata_w"], f"女子形.{st.session_state['ext_kata_w']}", mime=st.session_state["mime_kata_w"])
+            col1.download_button("🥋 男子個人組手", st.session_state["xlsx_kumite_m"], f"男子個人組手.{st.session_state['ext_kumite_m']}", mime=st.session_state["mime_kumite_m"])
+            col2.download_button("🥋 女子個人組手", st.session_state["xlsx_kumite_w"], f"女子個人組手.{st.session_state['ext_kumite_w']}", mime=st.session_state["mime_kumite_w"])
+            col3.download_button("🥋 男子個人形", st.session_state["xlsx_kata_m"], f"男子個人形.{st.session_state['ext_kata_m']}", mime=st.session_state["mime_kata_m"])
+            col4.download_button("🥋 女子個人形", st.session_state["xlsx_kata_w"], f"女子個人形.{st.session_state['ext_kata_w']}", mime=st.session_state["mime_kata_w"])
+            
+            st.markdown("##### 📥 団体戦 トーナメント作成データ")
+            col5, col6, col7, col8 = st.columns(4)
+            col5.download_button("👥 男子団体組手", st.session_state["xlsx_team_kumite_m"], f"男子団体組手.{st.session_state['ext_team_kumite_m']}", mime=st.session_state["mime_team_kumite_m"])
+            col6.download_button("👥 女子団体組手", st.session_state["xlsx_team_kumite_w"], f"女子団体組手.{st.session_state['ext_team_kumite_w']}", mime=st.session_state["mime_team_kumite_w"])
+            col7.download_button("👥 男子団体形", st.session_state["xlsx_team_kata_m"], f"男子団体形.{st.session_state['ext_team_kata_m']}", mime=st.session_state["mime_team_kata_m"])
+            col8.download_button("👥 女子団体形", st.session_state["xlsx_team_kata_w"], f"女子団体形.{st.session_state['ext_team_kata_w']}", mime=st.session_state["mime_team_kata_w"])
             
             st.markdown("##### 📊 その他データ")
             c1, c2 = st.columns(2)
