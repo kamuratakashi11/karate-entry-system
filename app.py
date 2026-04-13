@@ -8,6 +8,8 @@ import io
 import os
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 import time
 import random
 
@@ -26,6 +28,9 @@ except ImportError:
 KEY_FILE = 'secrets.json'
 SHEET_NAME = 'tournament_db' 
 V2_PREFIX = "v2_" 
+
+# ★追加：アップロード先のフォルダID
+UPLOAD_FOLDER_ID = "1n5CM_Jh9g3MiYfRU1yugdhSFWJZyhDdT"
 
 MEMBERS_COLS = ["school_id", "name", "sex", "grade", "dob", "jkf_no", "display_order", "active"]
 
@@ -91,22 +96,28 @@ COORD_DEF = {
 }
 
 # ---------------------------------------------------------
-# 2. Google Sheets 接続
+# 2. Google Sheets & Drive 接続
 # ---------------------------------------------------------
 @st.cache_resource
-def get_gsheet_client():
+def get_google_creds():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     if os.path.exists(KEY_FILE):
-        creds = ServiceAccountCredentials.from_json_keyfile_name(KEY_FILE, scope)
+        return ServiceAccountCredentials.from_json_keyfile_name(KEY_FILE, scope)
     else:
         try:
             vals = st.secrets["gcp_key"]
             if isinstance(vals, str): key_dict = json.loads(vals)
             else: key_dict = vals
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
+            return ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
         except Exception as e:
             st.error(f"認証設定エラー: {e}"); st.stop()
-    return gspread.authorize(creds)
+
+def get_gsheet_client():
+    return gspread.authorize(get_google_creds())
+
+# ★追加：Googleドライブ接続用
+def get_drive_service():
+    return build('drive', 'v3', credentials=get_google_creds())
 
 def retry_api(func):
     def wrapper(*args, **kwargs):
@@ -130,7 +141,7 @@ def get_worksheet_safe(tab_name):
     return ws
 
 # ---------------------------------------------------------
-# 3. データ操作 (分割保存対応版)
+# 3. データ操作 (分割保存・ファイルアップロード対応版)
 # ---------------------------------------------------------
 def load_json(tab_name, default):
     target_tab = f"{V2_PREFIX}{tab_name}"
@@ -258,6 +269,25 @@ def load_conf():
     return data
 
 def save_conf(d): save_json("config", d)
+
+# ★追加：Googleドライブへアップロードする関数
+def upload_file_to_drive(uploaded_file, school_name):
+    try:
+        service = get_drive_service()
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        ext = os.path.splitext(uploaded_file.name)[1]
+        file_name = f"【{school_name}】_申込書_{timestamp}{ext}"
+        
+        file_metadata = {
+            'name': file_name,
+            'parents': [UPLOAD_FOLDER_ID]
+        }
+        file_data = io.BytesIO(uploaded_file.getvalue())
+        media = MediaIoBaseUpload(file_data, mimetype=uploaded_file.type, resumable=True)
+        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        return True, file.get('id')
+    except Exception as e:
+        return False, str(e)
 
 # ---------------------------------------------------------
 # 4. ロジック
@@ -652,7 +682,6 @@ def school_page(s_id):
                 new_advs = edited_adv_df.to_dict(orient="records")
                 new_advs = [x for x in new_advs if x["name"]]
                 
-                # ★追加箇所: 他校の最新データを再取得して上書きを防止
                 load_auth_cached.clear()
                 latest_auth = load_auth()
                 
@@ -698,7 +727,6 @@ def school_page(s_id):
                 for c in MEMBERS_COLS:
                     if c not in edited_mem_df.columns: edited_mem_df[c] = ""
                     
-                # ★追加箇所: 他校の最新データを再取得して上書きを防止
                 current_master = load_members_master(force_reload=True)
                 latest_other_m = current_master[current_master['school_id'] != s_id].copy()
                 
@@ -908,11 +936,29 @@ def school_page(s_id):
                     st.success("✅ 保存しました！"); time.sleep(2); st.rerun()
 
         st.markdown("---")
-        if st.button("📥 Excel申込書を作成する", type="primary"):
-             final_merged = get_merged_data(s_id, active_tid)
-             fp, msg = generate_excel(s_id, s_data, final_merged, active_tid, t_conf)
-             if fp:
-                 with open(fp, "rb") as f: st.download_button("📥 ダウンロード", f, fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.markdown("#### 📥 申込書の出力と提出")
+        st.info("出力したExcelファイルに公印を押し、PDFや画像にしてから右側の枠へ提出してください。")
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("##### 1. 申込書の作成")
+            if st.button("📄 Excel申込書を作成する", type="secondary", use_container_width=True):
+                 final_merged = get_merged_data(s_id, active_tid)
+                 fp, msg = generate_excel(s_id, s_data, final_merged, active_tid, t_conf)
+                 if fp:
+                     with open(fp, "rb") as f: st.download_button("📥 ダウンロード", f, fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        
+        with c2:
+            st.markdown("##### 2. 申込書のアップロード")
+            uploaded_file = st.file_uploader("ファイルを選択 (PDF, JPG, PNG 等)", type=['pdf', 'jpg', 'jpeg', 'png'], label_visibility="collapsed")
+            if uploaded_file is not None:
+                if st.button("✅ 申込書を提出する", type="primary", use_container_width=True):
+                    with st.spinner("安全にアップロードしています..."):
+                        success, result = upload_file_to_drive(uploaded_file, base_name)
+                        if success:
+                            st.success("🎉 提出が完了しました！管理者が確認いたします。")
+                        else:
+                            st.error(f"❌ アップロード失敗: {result}")
 
 def admin_page():
     st.title("🔧 管理者画面 (v2)")
@@ -1023,6 +1069,45 @@ def admin_page():
             c1.download_button("📥 トーナメント用データ", st.session_state["admin_xlsx_tour"], "v2_tournament.xlsx")
             c2.download_button("📊 参加校一覧集計", st.session_state["admin_xlsx_summ"], "v2_summary.xlsx")
             c3.download_button("👔 顧問リスト", st.session_state["admin_xlsx_adv"], "v2_advisors.xlsx")
+
+        # ★追加箇所: 管理者による提出されたファイルの確認と削除
+        st.divider()
+        st.subheader("📂 提出された申込書の確認")
+        st.caption("各学校からアップロードされたファイルを確認・整理します。")
+        
+        if st.button("☁️ クラウドの提出ファイルを確認"):
+            with st.spinner("取得中..."):
+                try:
+                    service = get_drive_service()
+                    results = service.files().list(q=f"'{UPLOAD_FOLDER_ID}' in parents and trashed = false", fields="files(id, name, createdTime)").execute()
+                    st.session_state["drive_files"] = results.get('files', [])
+                except Exception as e:
+                    st.error(f"ファイル取得エラー: {e}")
+                
+        if "drive_files" in st.session_state:
+            files = st.session_state["drive_files"]
+            if not files:
+                st.info("提出されたファイルはありません。")
+            else:
+                st.write(f"現在 **{len(files)}** 件の提出があります。(※Googleドライブから直接一括ダウンロード可能です)")
+                
+                df_files = pd.DataFrame(files)
+                st.dataframe(df_files[['name', 'createdTime']])
+                
+                st.warning("⚠️ 大会終了後や次回の大会前には、容量確保のために全削除を行ってください。")
+                del_confirm = st.checkbox("すべての提出ファイルを完全に削除することを理解しました")
+                if st.button("🗑️ 申込書データをすべて削除する", type="primary"):
+                    if del_confirm:
+                        with st.spinner("削除中..."):
+                            service = get_drive_service()
+                            for f in files:
+                                service.files().delete(fileId=f['id']).execute()
+                        del st.session_state["drive_files"]
+                        st.success("✅ すべてのファイルを削除しました。")
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error("チェックボックスにチェックを入れてください。")
 
     elif admin_tab == "🏫 アカウント(編集)":
         st.subheader("アカウント管理 (v2仕様)")
