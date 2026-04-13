@@ -29,7 +29,6 @@ KEY_FILE = 'secrets.json'
 SHEET_NAME = 'tournament_db' 
 V2_PREFIX = "v2_" 
 
-# ★先生のGASのURL
 GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwTegYveIaIKagvcsJBcLlxbjVx7siHoeUmh_3YrRSu9uOpvl6Uo8X3NifGinnzuxSA/exec"
 
 MEMBERS_COLS = ["school_id", "name", "sex", "grade", "dob", "jkf_no", "display_order", "active"]
@@ -47,29 +46,11 @@ def to_safe_int(val):
 def generate_school_id():
     return f"sch_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-# 大会設定
 DEFAULT_TOURNAMENTS = {
-    "kantou": {
-        "name": "関東高等学校空手道大会 埼玉県予選",
-        "template": "template_kantou.xlsx",
-        "type": "standard", "grades": [1, 2, 3], "active": True
-    },
-    "interhigh": {
-        "name": "インターハイ 埼玉県予選",
-        "template": "template_interhigh.xlsx",
-        "type": "standard", "grades": [1, 2, 3], "active": False
-    },
-    "shinjin": {
-        "name": "新人大会",
-        "template": "template_shinjin.xlsx",
-        "type": "shinjin", "grades": [1, 2],
-        "weights_m": "-55,-61,-68,-76,+76", "weights_w": "-48,-53,-59,-66,+66", "active": False
-    },
-    "senbatsu": {
-        "name": "全国選抜 埼玉県予選",
-        "template": "template_senbatsu.xlsx",
-        "type": "division", "grades": [1, 2], "active": False
-    }
+    "kantou": {"name": "関東高等学校空手道大会 埼玉県予選", "template": "template_kantou.xlsx", "type": "standard", "grades": [1, 2, 3], "active": True},
+    "interhigh": {"name": "インターハイ 埼玉県予選", "template": "template_interhigh.xlsx", "type": "standard", "grades": [1, 2, 3], "active": False},
+    "shinjin": {"name": "新人大会", "template": "template_shinjin.xlsx", "type": "shinjin", "grades": [1, 2], "weights_m": "-55,-61,-68,-76,+76", "weights_w": "-48,-53,-59,-66,+66", "active": False},
+    "senbatsu": {"name": "全国選抜 埼玉県予選", "template": "template_senbatsu.xlsx", "type": "division", "grades": [1, 2], "active": False}
 }
 
 DEFAULT_LIMITS = {
@@ -83,16 +64,9 @@ DEFAULT_LIMITS = {
 COORD_DEF = {
     "year": "E3", "tournament_name": "I3", "date": "M7",
     "school_name": "C8", "principal": "C9", "head_advisor": "O9",
-    "advisors": [
-        {"name": "B42", "d1": "C42", "d2": "F42"}, {"name": "B43", "d1": "C43", "d2": "F43"},
-        {"name": "K42", "d1": "Q42", "d2": "U42"}, {"name": "K43", "d1": "Q43", "d2": "U43"}
-    ],
+    "advisors": [{"name": "B42", "d1": "C42", "d2": "F42"}, {"name": "B43", "d1": "C43", "d2": "F43"}, {"name": "K42", "d1": "Q42", "d2": "U42"}, {"name": "K43", "d1": "Q43", "d2": "U43"}],
     "start_row": 16, "cap": 22, "offset": 46,
-    "cols": {
-        "name": 2, "grade": 3, "dob": 4, "jkf_no": 19,
-        "m_team_kata": 11, "m_team_kumite": 12, "m_kata": 13, "m_kumite": 14,
-        "w_team_kata": 15, "w_team_kumite": 16, "w_kata": 17, "w_kumite": 18
-    }
+    "cols": {"name": 2, "grade": 3, "dob": 4, "jkf_no": 19, "m_team_kata": 11, "m_team_kumite": 12, "m_kata": 13, "m_kumite": 14, "w_team_kata": 15, "w_team_kumite": 16, "w_kata": 17, "w_kumite": 18}
 }
 
 # ---------------------------------------------------------
@@ -101,13 +75,11 @@ COORD_DEF = {
 @st.cache_resource
 def get_gsheet_client():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    if os.path.exists(KEY_FILE):
-        creds = ServiceAccountCredentials.from_json_keyfile_name(KEY_FILE, scope)
+    if os.path.exists(KEY_FILE): creds = ServiceAccountCredentials.from_json_keyfile_name(KEY_FILE, scope)
     else:
         try:
             vals = st.secrets["gcp_key"]
-            if isinstance(vals, str): key_dict = json.loads(vals)
-            else: key_dict = vals
+            key_dict = json.loads(vals) if isinstance(vals, str) else vals
             creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
         except Exception as e:
             st.error(f"認証設定エラー: {e}"); st.stop()
@@ -126,8 +98,7 @@ def retry_api(func):
 def get_worksheet_safe(tab_name):
     client = get_gsheet_client()
     try: sh = client.open(SHEET_NAME)
-    except gspread.exceptions.SpreadsheetNotFound:
-        st.error(f"スプレッドシート '{SHEET_NAME}' が見つかりません。"); st.stop()
+    except: st.error(f"スプレッドシート '{SHEET_NAME}' が見つかりません。"); st.stop()
     try: ws = sh.worksheet(tab_name)
     except: 
         try: ws = sh.add_worksheet(title=tab_name, rows=100, cols=20)
@@ -140,14 +111,11 @@ def get_worksheet_safe(tab_name):
 def load_json(tab_name, default):
     target_tab = f"{V2_PREFIX}{tab_name}"
     try:
-        ws = get_worksheet_safe(target_tab)
-        recs = ws.get_all_values()
+        ws = get_worksheet_safe(target_tab); recs = ws.get_all_values()
         if not recs: return default
         if len(recs) == 1 and len(recs[0]) >= 1:
             val = str(recs[0][0])
-            if val.startswith("{") or val.startswith("["):
-                parsed = json.loads(val)
-                return parsed if parsed is not None else default
+            if val.startswith("{") or val.startswith("["): return json.loads(val) if json.loads(val) is not None else default
         result = {}
         for row in recs:
             if len(row) >= 2:
@@ -158,8 +126,7 @@ def load_json(tab_name, default):
     except: return default
 
 def save_json(tab_name, data):
-    target_tab = f"{V2_PREFIX}{tab_name}"
-    ws = get_worksheet_safe(target_tab)
+    target_tab = f"{V2_PREFIX}{tab_name}"; ws = get_worksheet_safe(target_tab)
     if not isinstance(data, dict):
         ws.clear(); ws.update_acell('A1', json.dumps(data, ensure_ascii=False)); return
     rows = [[str(k), json.dumps(v, ensure_ascii=False)] for k, v in data.items()]
@@ -167,29 +134,21 @@ def save_json(tab_name, data):
     if rows: ws.update(rows)
 
 def load_members_master(force_reload=False):
-    if not force_reload and "v2_master_cache" in st.session_state:
-        return st.session_state["v2_master_cache"]
+    if not force_reload and "v2_master_cache" in st.session_state: return st.session_state["v2_master_cache"]
     try:
-        ws = get_worksheet_safe(f"{V2_PREFIX}members")
-        recs = ws.get_all_records()
+        ws = get_worksheet_safe(f"{V2_PREFIX}members"); recs = ws.get_all_records()
         if not recs: df = pd.DataFrame(columns=MEMBERS_COLS)
         else:
              df = pd.DataFrame(recs)
              for c in MEMBERS_COLS:
                  if c not in df.columns: df[c] = ""
     except: return pd.DataFrame(columns=MEMBERS_COLS)
-    df['grade'] = pd.to_numeric(df['grade'], errors='coerce').fillna(0).astype(int)
-    df['jkf_no'] = df['jkf_no'].astype(str).replace('nan', '')
-    df['dob'] = df['dob'].astype(str).replace('nan', '')
-    df['display_order'] = df['display_order'].astype(str).replace('nan', '') 
-    df = df[MEMBERS_COLS]
-    st.session_state["v2_master_cache"] = df
-    return df
+    df['grade'] = pd.to_numeric(df['grade'], errors='coerce').fillna(0).astype(int); df['jkf_no'] = df['jkf_no'].astype(str).replace('nan', ''); df['dob'] = df['dob'].astype(str).replace('nan', ''); df['display_order'] = df['display_order'].astype(str).replace('nan', '') 
+    df = df[MEMBERS_COLS]; st.session_state["v2_master_cache"] = df; return df
 
 def save_members_master(df):
     ws = get_worksheet_safe(f"{V2_PREFIX}members"); ws.clear()
-    df = df.fillna("")
-    df['jkf_no'] = df['jkf_no'].astype(str); df['dob'] = df['dob'].astype(str); df['display_order'] = df['display_order'].astype(str) 
+    df = df.fillna(""); df['jkf_no'] = df['jkf_no'].astype(str); df['dob'] = df['dob'].astype(str); df['display_order'] = df['display_order'].astype(str) 
     for c in MEMBERS_COLS:
         if c not in df.columns: df[c] = ""
     df_to_save = df[MEMBERS_COLS]
@@ -199,44 +158,32 @@ def save_members_master(df):
 def archive_graduates(grad_df, auth_data):
     if grad_df.empty: return
     ws_grad = get_worksheet_safe(f"{V2_PREFIX}graduates")
-    def get_school_name(sid):
-        d = auth_data.get(sid, {})
-        return d.get("base_name", "不明")
-    grad_df = grad_df.copy()
-    grad_df["archived_school_name"] = grad_df["school_id"].apply(get_school_name)
-    grad_df["archived_date"] = datetime.date.today().strftime("%Y-%m-%d")
+    grad_df = grad_df.copy(); grad_df["archived_school_name"] = grad_df["school_id"].apply(lambda sid: auth_data.get(sid, {}).get("base_name", "不明")); grad_df["archived_date"] = datetime.date.today().strftime("%Y-%m-%d")
     if not ws_grad.get_all_values(): ws_grad.append_row(grad_df.columns.tolist())
     ws_grad.append_rows(grad_df.astype(str).values.tolist())
 
-def clear_graduates_archive():
-    ws_grad = get_worksheet_safe(f"{V2_PREFIX}graduates"); ws_grad.clear()
+def clear_graduates_archive(): get_worksheet_safe(f"{V2_PREFIX}graduates").clear()
 
 def get_graduates_df():
     try:
-        ws = get_worksheet_safe(f"{V2_PREFIX}graduates")
-        recs = ws.get_all_records()
+        recs = get_worksheet_safe(f"{V2_PREFIX}graduates").get_all_records()
         return pd.DataFrame(recs) if recs else pd.DataFrame()
     except: return pd.DataFrame()
 
 def load_entries(tournament_id, force_reload=False):
     key = f"v2_entry_cache_{tournament_id}"
     if not force_reload and key in st.session_state: return st.session_state[key]
-    data = load_json(f"entry_{tournament_id}", {})
-    st.session_state[key] = data
-    return data
+    data = load_json(f"entry_{tournament_id}", {}); st.session_state[key] = data; return data
 
 def save_entries(tournament_id, data):
-    save_json(f"entry_{tournament_id}", data)
-    st.session_state[f"v2_entry_cache_{tournament_id}"] = data
+    save_json(f"entry_{tournament_id}", data); st.session_state[f"v2_entry_cache_{tournament_id}"] = data
 
 @st.cache_data
 def load_auth_cached(): return load_json("auth", {})
 
 def load_auth(): return load_auth_cached()
 
-def save_auth(d):
-    save_json("auth", d)
-    load_auth_cached.clear()
+def save_auth(d): save_json("auth", d); load_auth_cached.clear()
 
 def load_schools(): return load_json("schools", {})
 
@@ -249,33 +196,17 @@ def load_conf():
 
 def save_conf(d): save_json("config", d)
 
-# ★GAS経由でアップロードする関数
 def upload_file_to_gas(uploaded_file, school_name):
-    if not GAS_WEBAPP_URL or GAS_WEBAPP_URL == "ここに貼り付け":
-        return False, "GASのURLが設定されていません。"
+    if not GAS_WEBAPP_URL or GAS_WEBAPP_URL == "ここに貼り付け": return False, "GASのURLが設定されていません。"
     try:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        ext = os.path.splitext(uploaded_file.name)[1]
-        file_name = f"【{school_name}】_申込書_{timestamp}{ext}"
-        
-        file_content = uploaded_file.getvalue()
-        base64_content = base64.b64encode(file_content).decode('utf-8')
-        
-        payload = {
-            "fileName": file_name,
-            "mimeType": uploaded_file.type,
-            "base64": base64_content
-        }
-        
-        response = requests.post(GAS_WEBAPP_URL, json=payload)
-        res_data = response.json()
-        
-        if res_data.get("status") == "success":
-            return True, res_data.get("id")
-        else:
-            return False, res_data.get("message", "不明なエラー")
-    except Exception as e:
-        return False, str(e)
+        ext = os.path.splitext(uploaded_file.name)[1]; file_name = f"【{school_name}】_申込書_{timestamp}{ext}"
+        base64_content = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+        payload = {"fileName": file_name, "mimeType": uploaded_file.type, "base64": base64_content}
+        res_data = requests.post(GAS_WEBAPP_URL, json=payload).json()
+        if res_data.get("status") == "success": return True, res_data.get("id")
+        else: return False, res_data.get("message", "不明なエラー")
+    except Exception as e: return False, str(e)
 
 # ---------------------------------------------------------
 # 4. ロジック 
@@ -283,24 +214,17 @@ def upload_file_to_gas(uploaded_file, school_name):
 def create_backup():
     df = load_members_master(force_reload=False)
     ws_bk_mem = get_worksheet_safe(f"{V2_PREFIX}members_backup"); ws_bk_mem.clear()
-    df_bk = df.fillna("")[MEMBERS_COLS]
-    ws_bk_mem.update([df_bk.columns.tolist()] + df_bk.astype(str).values.tolist())
-    conf = load_conf()
-    ws_bk_conf = get_worksheet_safe(f"{V2_PREFIX}config_backup")
-    ws_bk_conf.update_acell('A1', json.dumps(conf, ensure_ascii=False))
+    df_bk = df.fillna("")[MEMBERS_COLS]; ws_bk_mem.update([df_bk.columns.tolist()] + df_bk.astype(str).values.tolist())
+    conf = load_conf(); ws_bk_conf = get_worksheet_safe(f"{V2_PREFIX}config_backup"); ws_bk_conf.update_acell('A1', json.dumps(conf, ensure_ascii=False))
 
 def restore_from_backup():
     try:
-        ws_bk_mem = get_worksheet_safe(f"{V2_PREFIX}members_backup")
-        recs = ws_bk_mem.get_all_records()
+        ws_bk_mem = get_worksheet_safe(f"{V2_PREFIX}members_backup"); recs = ws_bk_mem.get_all_records()
         df = pd.DataFrame(recs) if recs else pd.DataFrame(columns=MEMBERS_COLS)
-        if not df.empty:
-            df['grade'] = pd.to_numeric(df['grade'], errors='coerce').fillna(0).astype(int)
-            save_members_master(df)
+        if not df.empty: df['grade'] = pd.to_numeric(df['grade'], errors='coerce').fillna(0).astype(int); save_members_master(df)
     except: return "名簿の復元に失敗しました"
     try:
-        ws_bk_conf = get_worksheet_safe(f"{V2_PREFIX}config_backup")
-        val = ws_bk_conf.acell('A1').value
+        ws_bk_conf = get_worksheet_safe(f"{V2_PREFIX}config_backup"); val = ws_bk_conf.acell('A1').value
         if val: save_conf(json.loads(val))
     except: return "設定の復元に失敗しました"
     return "✅ バックアップから復元しました"
@@ -311,8 +235,7 @@ def perform_year_rollover():
     df = load_members_master(force_reload=True)
     if df.empty: return "データがありません"
     df['grade'] = df['grade'] + 1
-    graduates = df[df['grade'] > 3].copy()
-    current = df[df['grade'] <= 3].copy()
+    graduates = df[df['grade'] > 3].copy(); current = df[df['grade'] <= 3].copy()
     if not graduates.empty:
         auth = load_auth(); ws_grad = get_worksheet_safe(f"{V2_PREFIX}graduates")
         graduates["archived_school_name"] = graduates["school_id"].apply(lambda sid: auth.get(sid, {}).get("base_name", "不明"))
@@ -331,10 +254,8 @@ def get_merged_data(school_id, tournament_id):
     if master.empty: return pd.DataFrame()
     my_members = master[master['school_id'] == school_id].copy()
     entries = load_entries(tournament_id, force_reload=False)
-    cols_to_add = ["team_kata_chk", "team_kata_role", "team_kumi_chk", "team_kumi_role",
-                   "kata_chk", "kata_val", "kata_rank", "kumi_chk", "kumi_val", "kumi_rank"]
-    for c in cols_to_add:
-        my_members[f"last_{c}"] = my_members.apply(lambda r: entries.get(f"{r['school_id']}_{r['name']}", {}).get(c, None), axis=1)
+    cols_to_add = ["team_kata_chk", "team_kata_role", "team_kumi_chk", "team_kumi_role", "kata_chk", "kata_val", "kata_rank", "kumi_chk", "kumi_val", "kumi_rank"]
+    for c in cols_to_add: my_members[f"last_{c}"] = my_members.apply(lambda r: entries.get(f"{r['school_id']}_{r['name']}", {}).get(c, None), axis=1)
     return my_members
 
 def validate_counts(members_df, entries_data, limits, t_type, school_meta, school_id):
@@ -417,18 +338,22 @@ def generate_excel(school_id, school_data, members_df, t_id, t_conf):
             safe_write(ws, (r, ku_c), txt, True)
     fname = f"申込書_{bn}.xlsx"; wb.save(fname); return fname, "成功"
 
-# ★大幅改修: マクロ入りテンプレート(tournament_macro_template.xlsm)への流し込み対応
-def generate_tournament_excel(all_data, t_type, auth_data):
-    template_file = "tournament_macro_template.xlsm"
+# ★大幅改修: 4分割出力対応
+def generate_tournament_excel(all_data, t_type, auth_data, target_sex, target_category, template_file):
     sheets_data = {}
     
     for row in all_data:
         name, sid, sex = row['name'], row['school_id'], row['sex']
+        
+        # 指定された性別以外は弾く
+        if sex != target_sex:
+            continue
+
         s_data = auth_data.get(sid, {})
         school_short = s_data.get("short_name", s_data.get("base_name", ""))
         
-        # 個人形
-        if row.get('kata_chk'):
+        # 形の処理
+        if target_category == "形" and row.get('kata_chk'):
             k_val = row.get('kata_val')
             k_rank = row.get('kata_rank', '')
             if k_val and k_val not in ['補', 'なし', '出場しない']:
@@ -438,8 +363,8 @@ def generate_tournament_excel(all_data, t_type, auth_data):
                 if sn not in sheets_data: sheets_data[sn] = []
                 sheets_data[sn].append([rank_cell, name, school_short, seed_cell])
                 
-        # 個人組手
-        if row.get('kumi_chk'):
+        # 組手の処理
+        if target_category == "組手" and row.get('kumi_chk'):
             ku_val = row.get('kumi_val')
             ku_rank = row.get('kumi_rank', '')
             if ku_val and ku_val not in ['補', 'なし', '出場しない']:
@@ -460,7 +385,6 @@ def generate_tournament_excel(all_data, t_type, auth_data):
     has_template = os.path.exists(template_file)
     
     if has_template:
-        # keep_vba=True でマクロを破壊せずに追記
         wb = openpyxl.load_workbook(template_file, keep_vba=True)
         mime_type = "application/vnd.ms-excel.sheet.macroEnabled.12"
         ext = "xlsm"
@@ -470,16 +394,15 @@ def generate_tournament_excel(all_data, t_type, auth_data):
         mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ext = "xlsx"
 
-    # データをシートに流し込む
+    # データを流し込む
     for s_name in sorted(sheets_data.keys()):
         recs = sheets_data[s_name]
         if s_name in wb.sheetnames:
             ws = wb[s_name]
-            ws.delete_rows(1, ws.max_row) # 既存データをクリア
+            ws.delete_rows(1, ws.max_row)
         else:
             ws = wb.create_sheet(s_name)
         
-        # VBAマクロ用のヘッダー
         ws.append(["順位", "名前", "学校名", "シード枠"])
         for rec in recs:
             ws.append(rec)
@@ -737,11 +660,18 @@ def admin_page():
                     if ent.get("kata_chk") or ent.get("kumi_chk"):
                         row = m.to_dict(); row.update(ent); full_data.append(row)
                 
-                # ★ここが改修点: マクロ入りファイルの生成を呼び出し、拡張子とMIMEを受け取る
-                t_data, mime, ext = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth)
-                st.session_state["xlsx_tour"] = t_data
-                st.session_state["xlsx_tour_mime"] = mime
-                st.session_state["xlsx_tour_ext"] = ext
+                # ★ここが改修点: 4つのマクロファイルを個別に生成
+                tm_m, mime_m, ext_m = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth, "男子", "組手", "template_kumite_m.xlsm")
+                st.session_state["xlsx_kumite_m"] = tm_m; st.session_state["mime_kumite_m"] = mime_m; st.session_state["ext_kumite_m"] = ext_m
+                
+                tm_w, mime_w, ext_w = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth, "女子", "組手", "template_kumite_w.xlsm")
+                st.session_state["xlsx_kumite_w"] = tm_w; st.session_state["mime_kumite_w"] = mime_w; st.session_state["ext_kumite_w"] = ext_w
+                
+                tk_m, mime_km, ext_km = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth, "男子", "形", "template_kata_m.xlsm")
+                st.session_state["xlsx_kata_m"] = tk_m; st.session_state["mime_kata_m"] = mime_km; st.session_state["ext_kata_m"] = ext_km
+                
+                tk_w, mime_kw, ext_kw = generate_tournament_excel(full_data, conf["tournaments"][tid]["type"], auth, "女子", "形", "template_kata_w.xlsm")
+                st.session_state["xlsx_kata_w"] = tk_w; st.session_state["mime_kata_w"] = mime_kw; st.session_state["ext_kata_w"] = ext_kw
                 
                 st.session_state["xlsx_summ"] = generate_summary_excel(master, entries, auth, conf["tournaments"][tid]["type"])
                 st.session_state["xlsx_adv"] = generate_advisor_excel(load_schools(), auth)
@@ -749,21 +679,19 @@ def admin_page():
                 
         if "xlsx_ts" in st.session_state:
             st.success(f"✅ 集計完了 ({st.session_state['xlsx_ts']})")
-            c1, c2, c3 = st.columns(3)
             
-            # ★拡張子とMIMEを動的に設定（マクロの有無で .xlsm か .xlsx に変わる）
-            dl_file_name = f"tournament_data.{st.session_state.get('xlsx_tour_ext', 'xlsx')}"
-            dl_mime = st.session_state.get("xlsx_tour_mime", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.markdown("##### 📥 種目別 トーナメント作成データ")
+            col1, col2, col3, col4 = st.columns(4)
+            col1.download_button("🥋 男子組手", st.session_state["xlsx_kumite_m"], f"男子組手.{st.session_state['ext_kumite_m']}", mime=st.session_state["mime_kumite_m"])
+            col2.download_button("🥋 女子組手", st.session_state["xlsx_kumite_w"], f"女子組手.{st.session_state['ext_kumite_w']}", mime=st.session_state["mime_kumite_w"])
+            col3.download_button("🥋 男子形", st.session_state["xlsx_kata_m"], f"男子形.{st.session_state['ext_kata_m']}", mime=st.session_state["mime_kata_m"])
+            col4.download_button("🥋 女子形", st.session_state["xlsx_kata_w"], f"女子形.{st.session_state['ext_kata_w']}", mime=st.session_state["mime_kata_w"])
             
-            c1.download_button("📥 トーナメントデータ\n(マクロ自動連携)", st.session_state["xlsx_tour"], dl_file_name, mime=dl_mime)
-            c2.download_button("📊 参加校一覧集計", st.session_state["xlsx_summ"], "summary.xlsx")
-            c3.download_button("👔 顧問リスト", st.session_state["xlsx_adv"], "advisors.xlsx")
+            st.markdown("##### 📊 その他データ")
+            c1, c2 = st.columns(2)
+            c1.download_button("📊 参加校一覧集計", st.session_state["xlsx_summ"], "summary.xlsx")
+            c2.download_button("👔 顧問リスト", st.session_state["xlsx_adv"], "advisors.xlsx")
             
-        st.divider()
-        st.subheader("📂 提出された申込書の確認")
-        st.write("各校からアップロードされたファイルは、設定したGoogleドライブのフォルダに保存されています。")
-        st.info("直接Googleドライブを開いて、ファイルを一括ダウンロードして管理してください。")
-        
     elif admin_tab == "🏆 大会設定":
         st.subheader("基本設定")
         with st.form("conf_basic"):
