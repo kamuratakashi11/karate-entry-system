@@ -762,7 +762,7 @@ def admin_page():
                 st.caption("個人戦 (上限のみ)"); c1, c2 = st.columns(2)
                 lm["ind_kata_reg"]["max"] = c1.number_input("個人形(正) 上限", 0, 10, lm["ind_kata_reg"]["max"]); lm["ind_kata_sub"]["max"] = c2.number_input("個人形(補) 上限", 0, 10, lm["ind_kata_sub"]["max"])
                 c3, c4 = st.columns(2)
-                lm["ind_kumi_reg"]["max"] = c3.number_input("個人組手(正) 上限", 0, 10, lm["ind_kumi_reg"]["max"]); lm["ind_kumi_sub"]["max"] = c4.number_input("個人組手(補) 上限", 0, 10, lm["ind_kumi_sub"]["max"])
+                lm["ind_kumi_reg"]["max"] = c3.number_input("個人組手(正) 上限", 0, 100, lm["ind_kumi_reg"]["max"]); lm["ind_kumi_sub"]["max"] = c4.number_input("個人組手(補) 上限", 0, 10, lm["ind_kumi_sub"]["max"])
                 if st.form_submit_button("人数制限を保存"): conf["limits"] = lm; save_conf(conf); st.success("保存しました")
         with st.expander("🔐 管理者パスワード変更"):
             with st.form("admin_pw_change"):
