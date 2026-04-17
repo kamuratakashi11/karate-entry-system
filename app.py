@@ -48,7 +48,7 @@ def generate_school_id():
 
 DEFAULT_TOURNAMENTS = {
     "kantou": {"name": "関東高等学校空手道大会 埼玉県予選", "template": "template_kantou.xlsx", "type": "standard", "grades": [1, 2, 3], "active": True},
-    "interhigh": {"name": "インターハイ 埼玉県予選", "template": "template_interhigh.xlsx", "type": "standard", "grades": [1, 2, 3], "active": False},
+    "interhigh": {"name": "学校総合体育大会兼全国高等学校総合体育大会空手道競技県予選会", "template": "template_interhigh.xlsx", "type": "standard", "grades": [1, 2, 3], "active": False},
     "shinjin": {"name": "新人大会", "template": "template_shinjin.xlsx", "type": "shinjin", "grades": [1, 2], "weights_m": "-55,-61,-68,-76,+76", "weights_w": "-48,-53,-59,-66,+66", "active": False},
     "senbatsu": {"name": "全国選抜 埼玉県予選", "template": "template_senbatsu.xlsx", "type": "division", "grades": [1, 2], "active": False}
 }
