@@ -630,7 +630,7 @@ def admin_page():
         st.divider()
         st.subheader("📂 提出された申込書の確認")
         st.write("各校からアップロードされたファイルは、設定したGoogleドライブのフォルダに保存されています。")
-        st.info("直接Googleドライブを開いて、ファイルを一括ダウンロードして管理してください。")
+        st.info("直接Googleドライブを開いて、ファイルを一括ダウンロードして管理してください。https://drive.google.com/drive/u/0/folders/1n5CM_Jh9g3MiYfRU1yugdhSFWJZyhDdT")
         
     elif admin_tab == "🏆 大会設定":
         st.subheader("基本設定")
