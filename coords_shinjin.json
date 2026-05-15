@@ -1,0 +1,41 @@
+{
+  "year": "E3",
+  "tournament_name": "J3",
+  "date": "L7",
+  "school_name": "C8",
+  "principal": "C9",
+  "head_advisor": "N9",
+  "advisors": [
+    {"name": "A42", "d1": "D42", "d2": "E42"},
+    {"name": "A43", "d1": "D43", "d2": "E43"},
+    {"name": "K42", "d1": "Q42", "d2": "W42"},
+    {"name": "K43", "d1": "Q43", "d2": "W43"}
+  ],
+  "start_row": 14,
+  "cap": 22,
+  "offset": 46,
+  "cols": {
+    "name": 2,
+    "grade": 3,
+    "dob": 4,
+    "jkf_no": 23,
+    "m_team_kata": 5,
+    "m_team_kumite_5": 6,
+    "m_team_kumite_3": 7,
+    "m_kata": 8,
+    "m_kumite_-55kg級": 9,
+    "m_kumite_-61kg級": 10,
+    "m_kumite_-68kg級": 11,
+    "m_kumite_-76kg級": 12,
+    "m_kumite_+76kg級": 13,
+    "w_team_kata": 14,
+    "w_team_kumite_5": 15,
+    "w_team_kumite_3": 16,
+    "w_kata": 17,
+    "w_kumite_-48kg級": 18,
+    "w_kumite_-53kg級": 19,
+    "w_kumite_-59kg級": 20,
+    "w_kumite_-66kg級": 21,
+    "w_kumite_+66kg級": 22
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "year": "E3",
+  "tournament_name": "I3",
+  "date": "M7",
+  "school_name": "C8",
+  "principal": "C9",
+  "head_advisor": "O9",
+  "advisors": [
+    {"name": "B42", "d1": "C42", "d2": "F42"},
+    {"name": "B43", "d1": "C43", "d2": "F43"},
+    {"name": "K42", "d1": "Q42", "d2": "U42"},
+    {"name": "K43", "d1": "Q43", "d2": "U43"}
+  ],
+  "start_row": 16,
+  "cap": 22,
+  "offset": 46,
+  "cols": {
+    "name": 2,
+    "grade": 3,
+    "dob": 4,
+    "jkf_no": 19,
+    "m_team_kata": 11,
+    "m_team_kumite": 12,
+    "m_kata": 13,
+    "m_kumite": 14,
+    "w_team_kata": 15,
+    "w_team_kumite": 16,
+    "w_kata": 17,
+    "w_kumite": 18
+  }
+}
