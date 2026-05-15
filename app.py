@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, PatternFill
 import json
 import datetime
 import io
@@ -47,10 +47,10 @@ def generate_school_id():
     return f"sch_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
 
 DEFAULT_TOURNAMENTS = {
-    "kantou": {"name": "関東高等学校空手道大会 埼玉県予選", "template": "template_kantou.xlsx", "type": "standard", "grades": [1, 2, 3], "active": True},
-    "interhigh": {"name": "学校総合体育大会兼全国高等学校総合体育大会空手道競技県予選会", "template": "template_interhigh.xlsx", "type": "standard", "grades": [1, 2, 3], "active": False},
-    "shinjin": {"name": "新人大会", "template": "template_shinjin.xlsx", "type": "shinjin", "grades": [1, 2], "weights_m": "-55,-61,-68,-76,+76", "weights_w": "-48,-53,-59,-66,+66", "active": False},
-    "senbatsu": {"name": "全国選抜 埼玉県予選", "template": "template_senbatsu.xlsx", "type": "division", "grades": [1, 2], "active": False}
+    "kantou": {"name": "関東高等学校空手道大会 埼玉県予選", "template": "template.xlsx", "coords": "coords_standard.json", "type": "standard", "grades": [1, 2, 3], "active": True},
+    "interhigh": {"name": "学校総合体育大会兼全国高等学校総合体育大会空手道競技県予選会", "template": "template.xlsx", "coords": "coords_standard.json", "type": "standard", "grades": [1, 2, 3], "active": False},
+    "shinjin": {"name": "新人大会", "template": "template_shinjin.xlsx", "coords": "coords_shinjin.json", "type": "shinjin", "grades": [1, 2], "weights_m": "-55,-61,-68,-76,+76", "weights_w": "-48,-53,-59,-66,+66", "active": False},
+    "senbatsu": {"name": "全国選抜 埼玉県予選", "template": "template_senbatsu.xlsx", "coords": "coords_senbatsu.json", "type": "weight", "grades": [1, 2], "weights_m": "選抜の部,一年生の部,高入生の部", "weights_w": "選抜の部,一年生の部,高入生の部", "active": False}
 }
 
 DEFAULT_LIMITS = {
@@ -59,14 +59,6 @@ DEFAULT_LIMITS = {
     "team_kumite_3": {"min": 2, "max": 3, "sub_max": 1},
     "ind_kata_reg": {"max": 4}, "ind_kata_sub": {"max": 2},
     "ind_kumi_reg": {"max": 4}, "ind_kumi_sub": {"max": 2}
-}
-
-COORD_DEF = {
-    "year": "E3", "tournament_name": "I3", "date": "M7",
-    "school_name": "C8", "principal": "C9", "head_advisor": "O9",
-    "advisors": [{"name": "B42", "d1": "C42", "d2": "F42"}, {"name": "B43", "d1": "C43", "d2": "F43"}, {"name": "K42", "d1": "Q42", "d2": "U42"}, {"name": "K43", "d1": "Q43", "d2": "U43"}],
-    "start_row": 16, "cap": 22, "offset": 46,
-    "cols": {"name": 2, "grade": 3, "dob": 4, "jkf_no": 19, "m_team_kata": 11, "m_team_kumite": 12, "m_kata": 13, "m_kumite": 14, "w_team_kata": 15, "w_team_kumite": 16, "w_kata": 17, "w_kumite": 18}
 }
 
 # ---------------------------------------------------------
@@ -191,7 +183,16 @@ def load_conf():
     default_conf = {"year": "6", "tournaments": DEFAULT_TOURNAMENTS, "limits": DEFAULT_LIMITS, "admin_password": "1234"}
     data = load_json("config", default_conf)
     if "limits" not in data: data["limits"] = DEFAULT_LIMITS
-    if "tournaments" not in data: data["tournaments"] = DEFAULT_TOURNAMENTS
+    if "tournaments" not in data: 
+        data["tournaments"] = DEFAULT_TOURNAMENTS
+    else:
+        for t_key, default_t in DEFAULT_TOURNAMENTS.items():
+            if t_key not in data["tournaments"]:
+                data["tournaments"][t_key] = default_t
+            else:
+                for sub_k, sub_v in default_t.items():
+                    if sub_k not in data["tournaments"][t_key]:
+                        data["tournaments"][t_key][sub_k] = sub_v
     for k in ["team_kata", "team_kumite_5", "team_kumite_3"]:
         if k in data["limits"] and "sub_max" not in data["limits"][k]:
             data["limits"][k]["sub_max"] = DEFAULT_LIMITS[k]["sub_max"]
@@ -303,6 +304,7 @@ def validate_counts(members_df, entries_data, limits, t_type, school_meta, schoo
 # 5. Excel生成
 # ---------------------------------------------------------
 def safe_write(ws, target, value, align_center=False):
+    if not target: return
     if value is None: value = ""
     cell = ws[target] if isinstance(target, str) else ws.cell(row=target[0], column=target[1])
     if isinstance(cell, MergedCell):
@@ -314,10 +316,15 @@ def safe_write(ws, target, value, align_center=False):
     if align_center: cell.alignment = Alignment(horizontal='center', vertical='center')
 
 def generate_excel(school_id, school_data, members_df, t_id, t_conf):
-    coords = COORD_DEF; template_file = t_conf.get("template", "template.xlsx")
+    template_file = t_conf.get("template", "template.xlsx")
+    coords_file = t_conf.get("coords", "coords_standard.json")
+    try:
+        with open(coords_file, "r", encoding="utf-8") as _f:
+            coords = json.load(_f)
+    except: return None, f"{coords_file} が見つかりません。"
     try: wb = openpyxl.load_workbook(template_file); ws = wb.active
     except: return None, f"{template_file} が見つかりません。"
-    conf = load_conf(); safe_write(ws, coords["year"], conf.get("year", "")); safe_write(ws, coords["tournament_name"], t_conf.get("name", ""))
+    conf = load_conf(); entries = load_entries(t_id); school_meta = entries.get(f"_meta_{school_id}", {}); m_mode = school_meta.get("m_kumite_mode", "5"); w_mode = school_meta.get("w_kumite_mode", "5"); safe_write(ws, coords["year"], conf.get("year", "")); safe_write(ws, coords["tournament_name"], t_conf.get("name", ""))
     safe_write(ws, coords["date"], f"令和{datetime.date.today().year-2018}年{datetime.date.today().month}月{datetime.date.today().day}日")
     bn = school_data.get("base_name", ""); safe_write(ws, coords["school_name"], bn); safe_write(ws, coords["principal"], school_data.get("principal", ""))
     advs = school_data.get("advisors", []); safe_write(ws, coords["head_advisor"], advs[0]["name"] if advs else "")
@@ -333,21 +340,54 @@ def generate_excel(school_id, school_data, members_df, t_id, t_conf):
     for i, (_, row) in enumerate(entries.iterrows()):
         r = coords["start_row"] + (i // coords["cap"] * coords["offset"]) + (i % coords["cap"])
         safe_write(ws, (r, cols["name"]), row["name"]); safe_write(ws, (r, cols["grade"]), row["grade"]); safe_write(ws, (r, cols["dob"]), row["dob"]); safe_write(ws, (r, cols["jkf_no"]), row["jkf_no"])
-        sex = row["sex"]; tk_c = cols["m_team_kata"] if sex=="男子" else cols["w_team_kata"]; tku_c = cols["m_team_kumite"] if sex=="男子" else cols["w_team_kumite"]
-        if row.get("last_team_kata_chk"): safe_write(ws, (r, tk_c), "補" if row.get("last_team_kata_role")=="補" else "○", True)
-        if row.get("last_team_kumi_chk"): safe_write(ws, (r, tku_c), "補" if row.get("last_team_kumi_role")=="補" else "○", True)
-        k_c = cols["m_kata"] if sex=="男子" else cols["w_kata"]; ku_c = cols["m_kumite"] if sex=="男子" else cols["w_kumite"]
-        if row.get("last_kata_chk"):
+        sex = row["sex"]
+        
+        tk_c = cols.get(f"m_team_kata" if sex=="男子" else f"w_team_kata")
+        if tk_c and row.get("last_team_kata_chk"): 
+            safe_write(ws, (r, tk_c), "補" if row.get("last_team_kata_role")=="補" else "○", True)
+            
+        if row.get("last_team_kumi_chk"):
+            if t_conf["type"] in ["shinjin", "weight"]:
+                mode = m_mode if sex=="男子" else w_mode
+                tku_c = cols.get(f"m_team_kumite_{mode}" if sex=="男子" else f"w_team_kumite_{mode}")
+            else:
+                tku_c = cols.get(f"m_team_kumite" if sex=="男子" else f"w_team_kumite")
+            if tku_c: safe_write(ws, (r, tku_c), "補" if row.get("last_team_kumi_role")=="補" else "○", True)
+
+        k_c = cols.get(f"m_kata" if sex=="男子" else f"w_kata")
+        if k_c and row.get("last_kata_chk"):
             v, rk = row.get("last_kata_val"), row.get("last_kata_rank", "")
             txt = "補" if v=="補" else (f"シ{rk}" if v=="シード" else f"○{rk}")
             safe_write(ws, (r, k_c), txt, True)
+
         if row.get("last_kumi_chk"):
             v, rk = row.get("last_kumi_val"), row.get("last_kumi_rank", "")
-            if v=="補": txt = "補"
-            elif t_conf["type"]=="standard": txt = f"シ{rk}" if v=="シード" else f"○{rk}"
-            else: txt = str(v)
-            safe_write(ws, (r, ku_c), txt, True)
-    fname = f"申込書_{bn}.xlsx"; wb.save(fname); return fname, "成功"
+            if t_conf["type"] in ["shinjin", "weight"]:
+                ku_c = cols.get(f"m_kumite_{v}" if sex=="男子" else f"w_kumite_{v}")
+            else:
+                ku_c = cols.get(f"m_kumite" if sex=="男子" else f"w_kumite")
+            
+            if ku_c:
+                sub_v = row.get("last_kumi_sub_val", v) # 階級制なら sub_val、標準なら val
+                if sub_v == "補": txt = "補"
+                else: txt = f"シ{rk}" if sub_v=="シード" else f"○{rk}"
+                safe_write(ws, (r, ku_c), txt, True)
+            else:
+                weight = row.get("last_kumi_val")
+                sub_v = row.get("last_kumi_sub_val", "正")
+                rk = row.get("last_kumi_rank", "")
+                txt = "補" if sub_v=="補" else (f"シ{rk}" if sub_v=="シード" else f"○{rk}")
+                key = f"m_kumite_{weight}" if sex=="男子" else f"w_kumite_{weight}"
+                ku_c = cols.get(key)
+                if ku_c:
+                    safe_write(ws, (r, ku_c), txt, True)
+
+    import io
+    output = io.BytesIO()
+    fname = f"申込書_{bn}.xlsx"
+    wb.save(output)
+    output.seek(0)
+    return output, fname
 
 def generate_tournament_excel(all_data, t_type, auth_data):
     output = io.BytesIO()
@@ -371,11 +411,16 @@ def generate_tournament_excel(all_data, t_type, auth_data):
 
 def generate_summary_excel(master_df, entries, auth_data, t_type):
     rows = []
+    flags = {}
     for s_id, s_data in sorted(auth_data.items(), key=lambda x: to_safe_int(x[1].get('school_no'))):
-        s_name = s_data.get("short_name", s_data.get("base_name", "")); s_members = master_df[master_df['school_id'] == s_id]
-        m_tk, m_tku, w_tk, w_tku, m_k, m_ku, w_k, w_ku, regs = "", "", "", "", 0, 0, 0, 0, set()
+        s_name = s_data.get("short_name", s_data.get("base_name", ""))
+        s_members = master_df[master_df['school_id'] == s_id]
+        meta = entries.get(f"_meta_{s_id}", {})
+        m_tk, m_tku, w_tk, w_tku, m_k, m_ku, w_k, w_ku = "", "", "", "", 0, 0, 0, 0
+        regs = set()
         for _, r in s_members.iterrows():
-            ent = entries.get(f"{s_id}_{r['name']}", {}); sex = r['sex']
+            ent = entries.get(f"{s_id}_{r['name']}", {})
+            sex = r['sex']
             if sex == "男子":
                 if ent.get("team_kata_chk"): m_tk = "○"
                 if ent.get("team_kumi_chk"): m_tku = "○"
@@ -386,10 +431,42 @@ def generate_summary_excel(master_df, entries, auth_data, t_type):
                 if ent.get("team_kumi_chk"): w_tku = "○"
                 if ent.get("kata_chk") and ent.get("kata_val") not in ["補","なし","出場しない"]: w_k += 1
                 if ent.get("kumi_chk") and ent.get("kumi_val") not in ["補","なし","出場しない"]: w_ku += 1
-            if (ent.get("team_kata_chk") and ent.get("team_kata_role")=="正") or (ent.get("team_kumi_chk") and ent.get("team_kumi_role")=="正") or (ent.get("kata_chk") and ent.get("kata_val") not in ["補","なし","出場しない"]) or (ent.get("kumi_chk") and ent.get("kumi_val") not in ["補","なし","出場しない"]): regs.add(r['name'])
-        rows.append({"学校No": s_data.get('school_no',''), "学校名": s_name, "男団体形": m_tk, "男団体組手": m_tku, "男個人形": m_k if m_k>0 else "", "男個人組手": m_ku if m_ku>0 else "", "女団体形": w_tk, "女団体組手": w_tku, "女個人形": w_k if w_k>0 else "", "女個人組手": w_ku if w_ku>0 else "", "正選手合計": len(regs)})
+            if (ent.get("team_kata_chk") and ent.get("team_kata_role")=="正") or \
+               (ent.get("team_kumi_chk") and ent.get("team_kumi_role")=="正") or \
+               (ent.get("kata_chk") and ent.get("kata_val") not in ["補","なし","出場しない"]) or \
+               (ent.get("kumi_chk") and ent.get("kumi_val") not in ["補","なし","出場しない"]):
+                regs.add(r['name'])
+        
+        row_dict = {
+            "学校No": s_data.get('school_no',''), "学校名": s_name,
+            "男団体形": m_tk, "男団体組手": m_tku, "男個人形": m_k if m_k>0 else "", "男個人組手": m_ku if m_ku>0 else "",
+            "女団体形": w_tk, "女団体組手": w_tku, "女個人形": w_k if w_k>0 else "", "女個人組手": w_ku if w_ku>0 else "",
+            "正選手合計": len(regs)
+        }
+        # 不参加フラグの適用
+        if not meta.get("part_m_tk", True): row_dict["男団体形"] = "GRAY"
+        if not meta.get("part_m_tku", True): row_dict["男団体組手"] = "GRAY"
+        if not meta.get("part_m_k", True): row_dict["男個人形"] = "GRAY"
+        if not meta.get("part_m_ku", True): row_dict["男個人組手"] = "GRAY"
+        if not meta.get("part_w_tk", True): row_dict["女団体形"] = "GRAY"
+        if not meta.get("part_w_tku", True): row_dict["女団体組手"] = "GRAY"
+        if not meta.get("part_w_k", True): row_dict["女個人形"] = "GRAY"
+        if not meta.get("part_w_ku", True): row_dict["女個人組手"] = "GRAY"
+        rows.append(row_dict)
+
+    import pandas as pd
+    import io
+    df = pd.DataFrame(rows)
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer: pd.DataFrame(rows).to_excel(writer, sheet_name="参加校一覧", index=False)
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name="参加校一覧", index=False)
+        ws = writer.sheets["参加校一覧"]
+        gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+        for row in ws.iter_rows(min_row=2, max_col=10):
+            for cell in row:
+                if cell.value == "GRAY":
+                    cell.value = ""
+                    cell.fill = gray_fill
     return output.getvalue()
 
 def generate_advisor_excel(schools_data, auth_data):
@@ -479,98 +556,376 @@ def school_page(s_id):
     elif selected_view == "③ 大会エントリー":
         target_grades = [int(g) for g in t_conf['grades']]
         st.markdown(f"**出場対象学年:** {target_grades} 年生")
-        st.markdown("""<div style="background-color:#ffebee; border:1px solid #ef9a9a; padding:10px; border-radius:5px; color:#c62828;"><h4 style="margin:0;">⚠️ 順位入力について</h4><p style="font-weight:bold; margin:5px 0;">シード権やトーナメント配置の優先順位に使用します。補欠の場合は入力不要です。（例：1, 2, 3...）</p></div><br>""", unsafe_allow_html=True)
+
         merged = get_merged_data(s_id, active_tid)
         if merged.empty: st.warning("名簿を登録してください。"); return
-        merged['sex_rank'] = merged['sex'].map({'男子': 0, '女子': 1}); merged['grade_rank'] = merged['grade'].map({3: 0, 2: 1, 1: 2})
         valid_members = merged[merged['grade'].isin(target_grades)].copy()
-        def get_sort_key_ent(row):
-            try: return float(row['display_order']) if pd.notna(row['display_order']) and str(row['display_order']).strip() else 999999.0
-            except: return 999999.0
-        valid_members['custom_order'] = valid_members.apply(get_sort_key_ent, axis=1)
-        valid_members = valid_members.sort_values(by=['custom_order', 'sex_rank', 'grade_rank', 'name'])
         
-        entries_update = load_entries(active_tid, force_reload=False); school_meta = entries_update.get(f"_meta_{s_id}", {"m_kumite_mode": "none", "w_kumite_mode": "none"})
+        # 男子、女子の名前リストを作成
+        m_names = valid_members[valid_members['sex'] == '男子']['name'].tolist()
+        w_names = valid_members[valid_members['sex'] == '女子']['name'].tolist()
+        
+        entries_update = load_entries(active_tid, force_reload=False)
+        school_meta = entries_update.get(f"_meta_{s_id}", {"m_kumite_mode": "none", "w_kumite_mode": "none"})
+        
         m_mode, w_mode = "5", "5"
-        if t_conf["type"] == "shinjin":
-            with st.expander("団体組手の設定 (新人戦)", expanded=True):
-                c_m, c_w = st.columns(2)
-                cur_m = school_meta.get("m_kumite_mode", "none"); idx_m = ["none", "5", "3"].index(cur_m) if cur_m in ["none", "5", "3"] else 0
-                new_m = c_m.radio("男子 団体組手", ["出場しない", "5人制", "3人制"], index=idx_m, horizontal=True)
-                m_mode = "none" if new_m == "出場しない" else ("5" if new_m == "5人制" else "3")
-                cur_w = school_meta.get("w_kumite_mode", "none"); idx_w = ["none", "5", "3"].index(cur_w) if cur_w in ["none", "5", "3"] else 0
-                new_w = c_w.radio("女子 団体組手", ["出場しない", "5人制", "3人制"], index=idx_w, horizontal=True)
-                w_mode = "none" if new_w == "出場しない" else ("5" if new_w == "5人制" else "3")
-                if new_m != cur_m or new_w != cur_w:
-                    school_meta["m_kumite_mode"] = m_mode; school_meta["w_kumite_mode"] = w_mode; entries_update[f"_meta_{s_id}"] = school_meta; save_entries(active_tid, entries_update)
-
-        with st.form("entry_form_unified"):
-            cols = st.columns([1.7, 1.4, 1.4, 0.1, 3.1, 3.1]); cols[0].markdown("**氏名**"); cols[1].markdown("**団体形**"); cols[2].markdown("**団体組手**"); cols[4].markdown("**個人形**"); cols[5].markdown("**個人組手**")
-            form_buffer = {}
-            for i, r in valid_members.iterrows():
-                uid = f"{s_id}_{r['name']}"; ns = 'background-color:#e8f5e9; padding:2px; font-weight:bold;' if r['sex']=="男子" else 'background-color:#ffebee; padding:2px; font-weight:bold;'
-                c = st.columns([1.7, 1.4, 1.4, 0.1, 3.1, 3.1])
-                c[0].markdown(f'<span style="{ns}">{r["grade"]}年 {r["name"]}</span>', unsafe_allow_html=True)
-                val_tk = c[1].radio(f"tk_{uid}", ["なし", "正", "補"], index=["なし", "正", "補"].index(r.get("last_team_kata_role", "なし") if r.get("last_team_kata_role") in ["なし", "正", "補"] else "なし"), horizontal=True, label_visibility="collapsed")
-                val_tku = c[2].radio(f"tku_{uid}", ["なし", "正", "補"], index=["なし", "正", "補"].index(r.get("last_team_kumi_role", "なし") if r.get("last_team_kumi_role") in ["なし", "正", "補"] else "なし"), horizontal=True, label_visibility="collapsed") if (m_mode if r['sex']=="男子" else w_mode) != "none" else "なし"
-                if (m_mode if r['sex']=="男子" else w_mode) == "none": c[2].caption("-")
-                opts_k = ["なし", "正", "補", "シード"] if t_conf["type"]=="standard" else ["なし", "正", "補"]
-                ck1, ck2 = c[4].columns([1.5, 1])
-                val_k = ck1.radio(f"k_{uid}", opts_k, index=opts_k.index(r.get("last_kata_val","なし") if r.get("last_kata_val") in opts_k else "なし"), horizontal=True, label_visibility="collapsed")
-                rk_k = ck2.text_input("順位", r.get("last_kata_rank",""), key=f"rk_k_{uid}", label_visibility="collapsed", placeholder="順位")
-                c5a, c5b = c[5].columns([1.8, 1])
-                w_list = ["出場しない"] + [f"{w.strip()}kg級" for w in t_conf.get("weights_m" if r['sex']=="男子" else "weights_w", "").split(",")] + ["補欠"]
-                if t_conf["type"]=="standard":
-                    ku_v = c5a.radio(f"ku_{uid}", ["なし", "正", "補", "シード"], index=["なし", "正", "補", "シード"].index(r.get("last_kumi_val","なし") if r.get("last_kumi_val") in ["なし", "正", "補", "シード"] else "なし"), horizontal=True, label_visibility="collapsed")
-                else:
-                    cur_ku = r.get("last_kumi_val", "出場しない"); idx_ku = w_list.index(cur_ku) if cur_ku in w_list else 0
-                    ku_v = c5a.selectbox("階級", w_list, index=idx_ku, key=f"sel_ku_{uid}", label_visibility="collapsed")
-                rk_ku = c5b.text_input("順位", r.get("last_kumi_rank",""), key=f"rk_ku_{uid}", label_visibility="collapsed", placeholder="順位")
-                form_buffer[uid] = {"val_tk": val_tk, "val_tku": val_tku, "val_k": val_k, "rank_k": rk_k, "ku_val": ku_v, "rank_ku": rk_ku, "name": r["name"], "sex": r["sex"]}
-            
-            if st.form_submit_button("✅ エントリーを保存 (全員分)"):
-                has_error = False; temp_processed = {}; duplicate_checker = {} 
-                for uid, raw in form_buffer.items():
-                    k_chk = (raw["val_k"] != "なし"); k_val = raw["val_k"] if k_chk else ""
-                    if (k_val == "補" or k_val == "なし") and raw["rank_k"]:
-                        st.error(f"❌ {raw['name']} 個人形: 「{k_val}」ですが順位が入力されています。順位を削除してください。"); has_error = True
-                    if k_chk:
-                        if (k_val == "正" or k_val == "シード") and not raw["rank_k"]:
-                            st.error(f"❌ {raw['name']} 個人形: {k_val}選手の実績順位が入力されていません。"); has_error = True
-                        if (k_val == "正" or k_val == "シード") and raw["rank_k"]:
-                            check_key = f"{raw['sex']}_kata_{k_val}"; clean_rank = to_half_width(raw["rank_k"])
-                            if check_key not in duplicate_checker: duplicate_checker[check_key] = {}
-                            if clean_rank not in duplicate_checker[check_key]: duplicate_checker[check_key][clean_rank] = []
-                            duplicate_checker[check_key][clean_rank].append(raw["name"])
-
-                    ku_chk = (raw["ku_val"] not in ["なし", "出場しない"]); ku_val = raw["ku_val"] if ku_chk else ""
-                    if (ku_val in ["補", "なし", "出場しない", "補欠"]) and raw["rank_ku"]:
-                        st.error(f"❌ {raw['name']} 個人組手: 「{ku_val}」ですが順位が入力されています。順位を削除してください。"); has_error = True
-                    if ku_chk:
-                        is_reg = (t_conf["type"] == "weight" and ku_val != "補欠") or (t_conf["type"] == "standard" and ku_val == "正")
-                        is_seed = (t_conf["type"] == "standard" and ku_val == "シード")
-                        if (is_reg or is_seed) and not raw["rank_ku"]:
-                            st.error(f"❌ {raw['name']} 個人組手: 実績順位が入力されていません。"); has_error = True
-                        if t_conf["type"] == "standard" and (is_reg or is_seed) and raw["rank_ku"]:
-                            check_key = f"{raw['sex']}_kumite_{'シード' if is_seed else '正'}"; clean_rank = to_half_width(raw["rank_ku"])
-                            if check_key not in duplicate_checker: duplicate_checker[check_key] = {}
-                            if clean_rank not in duplicate_checker[check_key]: duplicate_checker[check_key][clean_rank] = []
-                            duplicate_checker[check_key][clean_rank].append(raw["name"])
-
-                    temp_processed[uid] = {"team_kata_chk": raw["val_tk"]!="なし", "team_kata_role": raw["val_tk"] if raw["val_tk"]!="なし" else "", "team_kumi_chk": raw["val_tku"]!="なし", "team_kumi_role": raw["val_tku"] if raw["val_tku"]!="なし" else "", "kata_chk": k_chk, "kata_val": k_val, "kata_rank": to_half_width(raw["rank_k"]), "kumi_chk": ku_chk, "kumi_val": ku_val, "kumi_rank": to_half_width(raw["rank_ku"])}
+        st.info("💡 個人戦の「順位」には、シードの選手はシード順位、そうでない場合は優先順位を必ず入れてください。優先順位を見てそれぞれの学校の１と４、２と３がうまく当たるようにトーナメント表の位置決めをします。")
+        st.markdown("#### ⚙️ 参加種目・階級の事前設定")
+        st.info("💡 まずはじめに、出場する種目・階級をすべて選択し、下のボタンで確定してください。選んだ種目だけが下のエントリー表に表示されます。")
+        with st.form("pre_setting_form_all"):
+            c1, c2 = st.columns(2)
+            sel_res = {}
+            with c1:
+                st.markdown("##### 🚹 男子")
+                sel_res["part_m_tk"] = st.checkbox("団体形", value=school_meta.get("part_m_tk", False), key="pre_m_tk")
+                sel_res["part_m_k"] = st.checkbox("個人形", value=school_meta.get("part_m_k", False), key="pre_m_k")
                 
+                if t_conf["type"] == "shinjin" or t_conf["type"] == "weight":
+                    sel_res["m_kumi_5"] = st.checkbox("団体組手 (5人制)", value=(school_meta.get("m_kumite_mode")=="5"), key="pre_m_kumi_5")
+                    sel_res["m_kumi_3"] = st.checkbox("団体組手 (3人制)", value=(school_meta.get("m_kumite_mode")=="3"), key="pre_m_kumi_3")
+                    
+                    st.write("個人組手 階級")
+                    wm_list = [f"{w.strip()}kg級" for w in t_conf.get("weights_m", "-55,-61,-68,-76,+76").split(",")]
+                    cols_m = st.columns(len(wm_list))
+                    for i, w in enumerate(wm_list):
+                        sel_res[f"part_m_ku_{w}"] = cols_m[i].checkbox(w.replace("kg級", ""), value=school_meta.get(f"part_m_ku_{w}", False), key=f"pre_m_ku_{w}")
+                else:
+                    sel_res["part_m_tku"] = st.checkbox("団体組手", value=school_meta.get("part_m_tku", False), key="pre_m_tku")
+                    sel_res["part_m_ku"] = st.checkbox("個人組手", value=school_meta.get("part_m_ku", False), key="pre_m_ku")
+
+            with c2:
+                st.markdown("##### 🚺 女子")
+                sel_res["part_w_tk"] = st.checkbox("団体形", value=school_meta.get("part_w_tk", False), key="pre_w_tk")
+                sel_res["part_w_k"] = st.checkbox("個人形", value=school_meta.get("part_w_k", False), key="pre_w_k")
+                
+                if t_conf["type"] == "shinjin" or t_conf["type"] == "weight":
+                    sel_res["w_kumi_5"] = st.checkbox("団体組手 (5人制)", value=(school_meta.get("w_kumite_mode")=="5"), key="pre_w_kumi_5")
+                    sel_res["w_kumi_3"] = st.checkbox("団体組手 (3人制)", value=(school_meta.get("w_kumite_mode")=="3"), key="pre_w_kumi_3")
+                    
+                    st.write("個人組手 階級")
+                    ww_list = [f"{w.strip()}kg級" for w in t_conf.get("weights_w", "-48,-53,-59,-66,+66").split(",")]
+                    cols_w = st.columns(len(ww_list))
+                    for i, w in enumerate(ww_list):
+                        sel_res[f"part_w_ku_{w}"] = cols_w[i].checkbox(w.replace("kg級", ""), value=school_meta.get(f"part_w_ku_{w}", False), key=f"pre_w_ku_{w}")
+                else:
+                    sel_res["part_w_tku"] = st.checkbox("団体組手", value=school_meta.get("part_w_tku", False), key="pre_w_tku")
+                    sel_res["part_w_ku"] = st.checkbox("個人組手", value=school_meta.get("part_w_ku", False), key="pre_w_ku")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.form_submit_button("✅ 事前設定を確定する", type="primary"):
+                has_err = False
+                if t_conf["type"] == "shinjin" or t_conf["type"] == "weight":
+                    if sel_res["m_kumi_5"] and sel_res["m_kumi_3"]:
+                        st.error("❌ 男子団体組手の5人制と3人制はどちらか一方しか出場できません。")
+                        has_err = True
+                    if sel_res["w_kumi_5"] and sel_res["w_kumi_3"]:
+                        st.error("❌ 女子団体組手の5人制と3人制はどちらか一方しか出場できません。")
+                        has_err = True
+                
+                if not has_err:
+                    school_meta["pre_setting_done"] = True
+                    school_meta["part_m_tk"] = sel_res["part_m_tk"]
+                    school_meta["part_m_k"] = sel_res["part_m_k"]
+                    school_meta["part_w_tk"] = sel_res["part_w_tk"]
+                    school_meta["part_w_k"] = sel_res["part_w_k"]
+                    
+                    if t_conf["type"] == "shinjin" or t_conf["type"] == "weight":
+                        school_meta["m_kumite_mode"] = "5" if sel_res["m_kumi_5"] else ("3" if sel_res["m_kumi_3"] else "none")
+                        school_meta["w_kumite_mode"] = "5" if sel_res["w_kumi_5"] else ("3" if sel_res["w_kumi_3"] else "none")
+                        school_meta["part_m_tku"] = school_meta["m_kumite_mode"] != "none"
+                        school_meta["part_w_tku"] = school_meta["w_kumite_mode"] != "none"
+                        
+                        m_ku_any, w_ku_any = False, False
+                        for w in wm_list:
+                            school_meta[f"part_m_ku_{w}"] = sel_res[f"part_m_ku_{w}"]
+                            if sel_res[f"part_m_ku_{w}"]: m_ku_any = True
+                        for w in ww_list:
+                            school_meta[f"part_w_ku_{w}"] = sel_res[f"part_w_ku_{w}"]
+                            if sel_res[f"part_w_ku_{w}"]: w_ku_any = True
+                        school_meta["part_m_ku"] = m_ku_any
+                        school_meta["part_w_ku"] = w_ku_any
+                    else:
+                        school_meta["part_m_tku"] = sel_res["part_m_tku"]
+                        school_meta["part_m_ku"] = sel_res["part_m_ku"]
+                        school_meta["part_w_tku"] = sel_res["part_w_tku"]
+                        school_meta["part_w_ku"] = sel_res["part_w_ku"]
+                    
+                    entries_update[f"_meta_{s_id}"] = school_meta
+                    save_entries(active_tid, entries_update)
+                    st.rerun()
+
+        m_mode = school_meta.get("m_kumite_mode", "none")
+        w_mode = school_meta.get("w_kumite_mode", "none")
+        p_m_tk = school_meta.get("part_m_tk", False)
+        p_m_tku = school_meta.get("part_m_tku", False)
+        p_m_k = school_meta.get("part_m_k", False)
+        p_m_ku = school_meta.get("part_m_ku", False)
+        p_w_tk = school_meta.get("part_w_tk", False)
+        p_w_tku = school_meta.get("part_w_tku", False)
+        p_w_k = school_meta.get("part_w_k", False)
+        p_w_ku = school_meta.get("part_w_ku", False)
+
+        st.markdown("### エントリー入力")
+        with st.form("entry_form_unified"):
+            tabs = st.tabs(["🥋 団体形", "🥊 団体組手", "🥋 個人形", "🥊 個人組手"])
+            limits = conf["limits"]
+            results = {}
+
+            # メタデータの取得
+            p_m_tk = school_meta.get("part_m_tk", True)
+            p_m_tku = school_meta.get("part_m_tku", True)
+            p_m_k = school_meta.get("part_m_k", True)
+            p_m_ku = school_meta.get("part_m_ku", True)
+            p_w_tk = school_meta.get("part_w_tk", True)
+            p_w_tku = school_meta.get("part_w_tku", True)
+            p_w_k = school_meta.get("part_w_k", True)
+            p_w_ku = school_meta.get("part_w_ku", True)
+
+            def build_team_df(sex_names, role_key, chk_key, max_reg, max_sub):
+                reg_l, sub_l = [], []
+                for n in sex_names:
+                    ent = entries_update.get(f"{s_id}_{n}", {})
+                    if ent.get(chk_key):
+                        r = ent.get(role_key)
+                        if r == "正": reg_l.append(n)
+                        elif r == "補": sub_l.append(n)
+                reg_l = (reg_l + [""] * max_reg)[:max_reg]
+                sub_l = (sub_l + [""] * max_sub)[:max_sub]
+                return pd.DataFrame({"役割": ["正"] * max_reg + ["補"] * max_sub, "選手名": reg_l + sub_l})
+
+            def build_ind_df(sex_names, chk_key, val_key, rank_key, def_reg, def_sub):
+                rows = []
+                for n in sex_names:
+                    ent = entries_update.get(f"{s_id}_{n}", {})
+                    if ent.get(chk_key):
+                        rows.append({"区分": ent.get(val_key, ""), "順位": ent.get(rank_key, ""), "選手名": n})
+                cur_reg = sum(1 for r in rows if r["区分"] == "正")
+                cur_sub = sum(1 for r in rows if r["区分"] == "補")
+                for _ in range(max(0, def_reg - cur_reg)): rows.append({"区分": "正", "順位": "", "選手名": ""})
+                for _ in range(max(0, def_sub - cur_sub)): rows.append({"区分": "補", "順位": "", "選手名": ""})
+                if sum(1 for r in rows if r["区分"] == "シード") == 0: rows.append({"区分": "シード", "順位": "", "選手名": ""})
+                return pd.DataFrame(rows)
+
+            def build_weight_df(sex_names, chk_key, val_key, rank_key, sub_key, w_name):
+                rows = []
+                for n in sex_names:
+                    ent = entries_update.get(f"{s_id}_{n}", {})
+                    if ent.get(chk_key) and ent.get(val_key) == w_name:
+                        rows.append({"区分": ent.get(sub_key, "正"), "順位": ent.get(rank_key, ""), "選手名": n})
+                for _ in range(max(0, 5 - len(rows))):
+                    rows.append({"区分": "正", "順位": "", "選手名": ""})
+                return pd.DataFrame(rows)
+
+            # ガイドテキスト用定数
+            guide_txt = "💡 事前設定で参加が選択されていないため、エントリーできません。"
+
+            # 1. 団体形
+            with tabs[0]:
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("#### 🚹 男子 団体形")
+                    if p_m_tk:
+                        df_m_tk = build_team_df(m_names, "team_kata_role", "team_kata_chk", limits["team_kata"]["max"], limits["team_kata"]["sub_max"])
+                        results["m_tk"] = st.data_editor(df_m_tk, column_config={"役割": st.column_config.Column(disabled=True), "選手名": st.column_config.SelectboxColumn(options=[""] + m_names)}, hide_index=True, key="ed_m_tk", use_container_width=True)
+                    else: st.info(guide_txt)
+                with c2:
+                    st.markdown("#### 🚺 女子 団体形")
+                    if p_w_tk:
+                        df_w_tk = build_team_df(w_names, "team_kata_role", "team_kata_chk", limits["team_kata"]["max"], limits["team_kata"]["sub_max"])
+                        results["w_tk"] = st.data_editor(df_w_tk, column_config={"役割": st.column_config.Column(disabled=True), "選手名": st.column_config.SelectboxColumn(options=[""] + w_names)}, hide_index=True, key="ed_w_tk", use_container_width=True)
+                    else: st.info(guide_txt)
+
+            # 2. 団体組手
+            with tabs[1]:
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("#### 🚹 男子 団体組手")
+                    if p_m_tku:
+                        l_k = "team_kumite_3" if m_mode == "3" else "team_kumite_5"
+                        df_m_tku = build_team_df(m_names, "team_kumi_role", "team_kumi_chk", limits[l_k]["max"], limits[l_k]["sub_max"])
+                        results["m_tku"] = st.data_editor(df_m_tku, column_config={"役割": st.column_config.Column(disabled=True), "選手名": st.column_config.SelectboxColumn(options=[""] + m_names)}, hide_index=True, key="ed_m_tku", use_container_width=True)
+                    else: st.info(guide_txt)
+                with c2:
+                    st.markdown("#### 🚺 女子 団体組手")
+                    if p_w_tku:
+                        l_k = "team_kumite_3" if w_mode == "3" else "team_kumite_5"
+                        df_w_tku = build_team_df(w_names, "team_kumi_role", "team_kumi_chk", limits[l_k]["max"], limits[l_k]["sub_max"])
+                        results["w_tku"] = st.data_editor(df_w_tku, column_config={"役割": st.column_config.Column(disabled=True), "選手名": st.column_config.SelectboxColumn(options=[""] + w_names)}, hide_index=True, key="ed_w_tku", use_container_width=True)
+                    else: st.info(guide_txt)
+
+            # 3. 個人形
+            with tabs[2]:
+                c1, c2 = st.columns(2)
+                opts_k = ["正", "補", "シード", "なし"]
+                with c1:
+                    st.markdown("#### 🚹 男子 個人形")
+                    if p_m_k:
+                        df_m_k = build_ind_df(m_names, "kata_chk", "kata_val", "kata_rank", limits["ind_kata_reg"]["max"], limits["ind_kata_sub"]["max"])
+                        results["m_k"] = st.data_editor(df_m_k, column_config={"区分": st.column_config.SelectboxColumn(options=opts_k), "選手名": st.column_config.SelectboxColumn(options=[""] + m_names)}, num_rows="dynamic", hide_index=True, key="ed_m_k", use_container_width=True)
+                    else: st.info(guide_txt)
+                with c2:
+                    st.markdown("#### 🚺 女子 個人形")
+                    if p_w_k:
+                        df_w_k = build_ind_df(w_names, "kata_chk", "kata_val", "kata_rank", limits["ind_kata_reg"]["max"], limits["ind_kata_sub"]["max"])
+                        results["w_k"] = st.data_editor(df_w_k, column_config={"区分": st.column_config.SelectboxColumn(options=opts_k), "選手名": st.column_config.SelectboxColumn(options=[""] + w_names)}, num_rows="dynamic", hide_index=True, key="ed_w_k", use_container_width=True)
+                    else: st.info(guide_txt)
+
+            # 4. 個人組手
+            with tabs[3]:
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("#### 🚹 男子 個人組手")
+                    if t_conf["type"] == "standard":
+                        if p_m_ku:
+                            df_m_ku = build_ind_df(m_names, "kumi_chk", "kumi_val", "kumi_rank", limits["ind_kumi_reg"]["max"], limits["ind_kumi_sub"]["max"])
+                            results["m_ku_std"] = st.data_editor(df_m_ku, column_config={"区分": st.column_config.SelectboxColumn(options=["正", "補", "シード", "なし"]), "選手名": st.column_config.SelectboxColumn(options=[""] + m_names)}, num_rows="dynamic", hide_index=True, key="ed_m_ku", use_container_width=True)
+                        else: st.info(guide_txt)
+                    else:
+                        if not p_m_ku: st.info("💡 事前設定で参加階級が選択されていないため、エントリーできません。")
+                        else:
+                            st.caption("💡 上の事前設定で選択した階級のみ表示されています。")
+                            weights_m = t_conf.get("weights_m", "-55,-61,-68,-76,+76").split(",")
+                            for w in weights_m:
+                                w_name = f"{w.strip()}kg級"
+                                if school_meta.get(f"part_m_ku_{w_name}", False):
+                                    with st.expander(f"▼ {w_name}", expanded=True):
+                                        st.caption("人数を追加する場合は表下部の「＋」を押してください")
+                                        df_w = build_weight_df(m_names, "kumi_chk", "kumi_val", "kumi_rank", "kumi_sub_val", w_name)
+                                        results[f"m_ku_{w_name}"] = st.data_editor(df_w, column_config={"区分": st.column_config.SelectboxColumn(options=["正", "補", "シード", "なし"]), "選手名": st.column_config.SelectboxColumn(options=[""] + m_names)}, num_rows="dynamic", hide_index=True, key=f"ed_m_ku_{w_name}", use_container_width=True)
+                with c2:
+                    st.markdown("#### 🚺 女子 個人組手")
+                    if t_conf["type"] == "standard":
+                        if p_w_ku:
+                            df_w_ku = build_ind_df(w_names, "kumi_chk", "kumi_val", "kumi_rank", limits["ind_kumi_reg"]["max"], limits["ind_kumi_sub"]["max"])
+                            results["w_ku_std"] = st.data_editor(df_w_ku, column_config={"区分": st.column_config.SelectboxColumn(options=["正", "補", "シード", "なし"]), "選手名": st.column_config.SelectboxColumn(options=[""] + w_names)}, num_rows="dynamic", hide_index=True, key="ed_w_ku", use_container_width=True)
+                        else: st.info(guide_txt)
+                    else:
+                        if not p_w_ku: st.info("💡 事前設定で参加階級が選択されていないため、エントリーできません。")
+                        else:
+                            st.caption("💡 上の事前設定で選択した階級のみ表示されています。")
+                            weights_w = t_conf.get("weights_w", "-48,-53,-59,-66,+66").split(",")
+                            for w in weights_w:
+                                w_name = f"{w.strip()}kg級"
+                                if school_meta.get(f"part_w_ku_{w_name}", False):
+                                    with st.expander(f"▼ {w_name}", expanded=True):
+                                        st.caption("人数を追加する場合は表下部の「＋」を押してください")
+                                        df_w = build_weight_df(w_names, "kumi_chk", "kumi_val", "kumi_rank", "kumi_sub_val", w_name)
+                                        results[f"w_ku_{w_name}"] = st.data_editor(df_w, column_config={"区分": st.column_config.SelectboxColumn(options=["正", "補", "シード", "なし"]), "選手名": st.column_config.SelectboxColumn(options=[""] + w_names)}, num_rows="dynamic", hide_index=True, key=f"ed_w_ku_{w_name}", use_container_width=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.form_submit_button("✅ エントリーを保存 (全員分)", type="primary", use_container_width=True):
+                has_error = False
+                temp_processed = {}
+                duplicate_checker = {}
+
+                # 初期化（全メンバーのチェックを一度外す）
+                for _, r in valid_members.iterrows():
+                    uid = f"{s_id}_{r['name']}"
+                    temp_processed[uid] = {
+                        "team_kata_chk": False, "team_kata_role": "",
+                        "team_kumi_chk": False, "team_kumi_role": "",
+                        "kata_chk": False, "kata_val": "", "kata_rank": "",
+                        "kumi_chk": False, "kumi_val": "", "kumi_rank": "", "kumi_sub_val": ""
+                    }
+
+                def apply_team(df, chk_k, role_k, sex_str, t_name):
+                    nonlocal has_error
+                    if df is None: return
+                    used = set()
+                    for _, row in df.iterrows():
+                        n = row.get("選手名", "")
+                        if n:
+                            if n in used:
+                                st.error(f"❌ {sex_str} {t_name}: 「{n}」が重複して選択されています。")
+                                has_error = True
+                            used.add(n)
+                            uid = f"{s_id}_{n}"
+                            if uid in temp_processed:
+                                temp_processed[uid][chk_k] = True
+                                temp_processed[uid][role_k] = row.get("役割", "")
+
+                def apply_ind(df, chk_k, val_k, rank_k, sub_k, sex_str, t_name, is_weight, w_name=None):
+                    nonlocal has_error
+                    if df is None: return
+                    used = set()
+                    for _, row in df.iterrows():
+                        n = row.get("選手名", "")
+                        v = row.get("区分", "")
+                        rk = str(row.get("順位", "")).strip()
+                        if n and v not in ["なし", "出場しない"]:
+                            if n in used:
+                                st.error(f"❌ {sex_str} {t_name}{'('+w_name+')' if w_name else ''}: 「{n}」が重複して選択されています。")
+                                has_error = True
+                            used.add(n)
+                            uid = f"{s_id}_{n}"
+                            if uid in temp_processed:
+                                need_rank = False
+                                if v in ["正", "シード"]: need_rank = True
+                                
+                                if need_rank and not rk:
+                                    st.error(f"❌ {n} {t_name}: 順位が入力されていません。")
+                                    has_error = True
+                                if not need_rank and rk:
+                                    st.error(f"❌ {n} {t_name}: 「{v}」ですが順位が入力されています。順位を削除してください。")
+                                    has_error = True
+                                    
+                                if need_rank and rk:
+                                    key = f"{sex_str}_{t_name}_{v}" + (f"_{w_name}" if w_name else "")
+                                    if key not in duplicate_checker: duplicate_checker[key] = {}
+                                    if rk not in duplicate_checker[key]: duplicate_checker[key][rk] = []
+                                    duplicate_checker[key][rk].append(n)
+
+                                temp_processed[uid][chk_k] = True
+                                if is_weight and w_name:
+                                    temp_processed[uid][val_k] = w_name
+                                    temp_processed[uid][sub_k] = v
+                                else:
+                                    temp_processed[uid][val_k] = v
+                                temp_processed[uid][rank_k] = to_half_width(rk)
+
+                # メタデータ(参加フラグ)の保存
+                temp_processed[f"_meta_{s_id}"] = school_meta
+
+                # データの適用
+                apply_team(results.get("m_tk"), "team_kata_chk", "team_kata_role", "男子", "団体形")
+                apply_team(results.get("m_tku"), "team_kumi_chk", "team_kumi_role", "男子", "団体組手")
+                apply_ind(results.get("m_k"), "kata_chk", "kata_val", "kata_rank", "", "男子", "個人形", False)
+                if t_conf["type"] == "standard":
+                    apply_ind(results.get("m_ku_std"), "kumi_chk", "kumi_val", "kumi_rank", "", "男子", "個人組手", False)
+                    apply_ind(results.get("w_ku_std"), "kumi_chk", "kumi_val", "kumi_rank", "", "女子", "個人組手", False)
+                else:
+                    weights_m = t_conf.get("weights_m", "-55,-61,-68,-76,+76").split(",")
+                    for w in weights_m:
+                        w_name = f"{w.strip()}kg級"
+                        apply_ind(results.get(f"m_ku_{w_name}"), "kumi_chk", "kumi_val", "kumi_rank", "kumi_sub_val", "男子", "個人組手", True, w_name)
+                    weights_w = t_conf.get("weights_w", "-48,-53,-59,-66,+66").split(",")
+                    for w in weights_w:
+                        w_name = f"{w.strip()}kg級"
+                        apply_ind(results.get(f"w_ku_{w_name}"), "kumi_chk", "kumi_val", "kumi_rank", "kumi_sub_val", "女子", "個人組手", True, w_name)
+
+                apply_ind(results.get("w_k"), "kata_chk", "kata_val", "kata_rank", "", "女子", "個人形", False)
+                apply_team(results.get("w_tk"), "team_kata_chk", "team_kata_role", "女子", "団体形")
+                apply_team(results.get("w_tku"), "team_kumi_chk", "team_kumi_role", "女子", "団体組手")
+
                 for key, ranks in duplicate_checker.items():
                     for rank_val, names in ranks.items():
                         if len(names) > 1:
-                            parts = key.split("_"); st.error(f"❌ {parts[0]} 個人{'形' if parts[1]=='kata' else '組手'} ({parts[2]}選手) で順位『{rank_val}』が重複しています: {', '.join(names)}"); has_error = True
+                            st.error(f"❌ {key} で順位『{rank_val}』が重複しています: {', '.join(names)}")
+                            has_error = True
 
                 if not has_error:
                     with st.spinner("💾 エントリーを保存しています..."):
-                        cur_entries = load_entries(active_tid, force_reload=True); cur_entries.update(temp_processed)
+                        cur_entries = load_entries(active_tid, force_reload=True)
+                        cur_entries.update(temp_processed)
                         errs = validate_counts(valid_members, cur_entries, conf["limits"], t_conf["type"], {"m_kumite_mode":m_mode, "w_kumite_mode":w_mode}, s_id)
                         if errs:
                             for e in errs: st.error(e)
-                        else: save_entries(active_tid, cur_entries); st.success("✅ 保存しました！"); time.sleep(2); st.rerun()
+                        else:
+                            save_entries(active_tid, cur_entries)
+                            st.success("✅ 保存しました！")
+                            time.sleep(1)
+                            st.rerun()
+
 
         st.markdown("---")
         st.markdown("#### 📥 申込書の出力と提出")
@@ -578,10 +933,12 @@ def school_page(s_id):
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("##### 1. 申込書の作成")
-            if st.button("📄 Excel申込書を作成する", type="secondary", use_container_width=True):
-                 final_m = get_merged_data(s_id, active_tid); fp, msg = generate_excel(s_id, s_data, final_m, active_tid, t_conf)
-                 if fp:
-                     with open(fp, "rb") as f: st.download_button("📥 ダウンロード", f, fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            final_m = get_merged_data(s_id, active_tid)
+            file_data, fname = generate_excel(s_id, s_data, final_m, active_tid, t_conf)
+            if file_data:
+                st.download_button("📄 Excel申込書をダウンロード", file_data, fname, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="secondary", use_container_width=True)
+            else:
+                st.error(f"作成失敗: {fname}")
         with c2:
             st.markdown("##### 2. 申込書のアップロード")
             u_file = st.file_uploader("ファイルを選択 (PDF, JPG, PNG 等)", type=['pdf', 'jpg', 'jpeg', 'png'], label_visibility="collapsed")
@@ -639,8 +996,15 @@ def admin_page():
             t_opts = list(conf["tournaments"].keys())
             active_now = next((k for k, v in conf["tournaments"].items() if v["active"]), None)
             new_active = st.radio("受付中の大会", t_opts, index=t_opts.index(active_now) if active_now else 0, format_func=lambda x: conf["tournaments"][x]["name"])
+            
+            st.markdown("---")
+            active_t_name = conf["tournaments"][active_now]["name"] if active_now else ""
+            new_name = st.text_input("表示中(受付中)の大会名の変更", active_t_name)
+            
             if st.form_submit_button("設定を保存 & 大会切替"):
                 conf["year"] = new_year
+                if active_now and new_name.strip():
+                    conf["tournaments"][active_now]["name"] = new_name.strip()
                 if new_active != active_now:
                     for k in conf["tournaments"]: conf["tournaments"][k]["active"] = (k == new_active)
                 save_conf(conf); st.success("保存しました"); time.sleep(0.5); st.rerun()
@@ -669,6 +1033,17 @@ def admin_page():
                 lm["ind_kumi_reg"]["max"] = c1.number_input("個人組手(正) 上限", 0, 100, lm["ind_kumi_reg"]["max"])
                 lm["ind_kumi_sub"]["max"] = c2.number_input("個人組手(補) 上限", 0, 10, lm["ind_kumi_sub"]["max"])
                 if st.form_submit_button("人数制限を保存"): conf["limits"] = lm; save_conf(conf); st.success("保存しました")
+        with st.expander("⚖️ 体重別階級の設定 (新人戦等)", expanded=True):
+            with st.form("conf_weights"):
+                active_t_conf = conf["tournaments"].get(active_now, {}) if active_now else {}
+                cw1, cw2 = st.columns(2)
+                wm = cw1.text_input("男子階級 (カンマ区切り)", active_t_conf.get("weights_m", "-55,-61,-68,-76,+76"))
+                ww = cw2.text_input("女子階級 (カンマ区切り)", active_t_conf.get("weights_w", "-48,-53,-59,-66,+66"))
+                if st.form_submit_button("階級を保存"):
+                    if active_now:
+                        conf["tournaments"][active_now]["weights_m"] = wm
+                        conf["tournaments"][active_now]["weights_w"] = ww
+                        save_conf(conf); st.success("保存しました"); time.sleep(1); st.rerun()
         with st.expander("🔐 管理者パスワード変更"):
             with st.form("admin_pw_change"):
                 new_pw = st.text_input("新しい管理者パスワード", type="password")
