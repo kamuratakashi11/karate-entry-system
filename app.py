@@ -511,7 +511,18 @@ def school_page(s_id):
         adv_df = pd.DataFrame(s_data.get("advisors", []))
         for c in ["name", "role", "d1", "d2"]:
             if c not in adv_df.columns: adv_df[c] = ""
-        edited_adv_df = st.data_editor(adv_df[["name", "role", "d1", "d2"]], column_config={"name": "氏名", "role": st.column_config.SelectboxColumn("役割", options=["審判", "競技記録", "係員"], required=True), "d1": "1日目", "d2": "2日目"}, num_rows="dynamic", use_container_width=True, hide_index=True)
+        edited_adv_df = st.data_editor(
+    adv_df[["name", "role", "d1", "d2"]], 
+    column_config={
+        "name": "氏名", 
+        "role": st.column_config.SelectboxColumn("役割", options=["審判", "競技記録", "係員"], required=True), 
+        "d1": st.column_config.CheckboxColumn("1日目", default=False),  # ここを明示的にチェックボックス化
+        "d2": st.column_config.CheckboxColumn("2日目", default=False)   # ここを明示的にチェックボックス化
+    }, 
+    num_rows="dynamic", 
+    use_container_width=True, 
+    hide_index=True
+)
         if st.button("💾 顧問情報を保存", type="primary"):
             if edited_adv_df["name"].isnull().any() or (edited_adv_df["name"] == "").any(): st.error("❌ 氏名が未入力です"); return
             with st.spinner("保存中..."):
