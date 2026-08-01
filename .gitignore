@@ -1,0 +1,20 @@
+# 鍵・個人情報はこのリポジトリ（公開）に絶対入れない
+secrets*
+service_account.json
+*.sqlite3
+snapshot_*/
+karate_entry_data/
+
+__pycache__/
+*.pyc
+
+# 動作確認の生成物
+server/entry_check/out_test.xlsx
+server/entry_check/written.json
+server/entry_check/page_out.html
+server/entry_check/申込書_確認用テスト.xlsx
+
+server/entry_check/output_test.xlsx
+
+# 抽選会の盤面（draw_publishの書き込み先・実名入り）
+server/draw/
