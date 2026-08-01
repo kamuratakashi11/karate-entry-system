@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大会申込システム 管理</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* 管理画面だけの追加。学校側の規格（style.css）に乗せる */
+  .sum { display:flex; gap:10px; flex-wrap:wrap; margin:12px 0 0; }
+  .card-n { flex:1 1 150px; background:var(--surface); border:1px solid var(--line-soft);
+            border-left:3px solid var(--accent); border-radius:var(--radius); padding:7px 11px; }
+  .card-n .lbl { font-size:11.5px; color:var(--ink-3); letter-spacing:.06em; }
+  .card-n .v { font-size:21px; font-weight:600; line-height:1.3; }
+  .card-n .v small { font-size:12px; font-weight:normal; color:var(--ink-3); margin-left:3px; }
+
+  table.st { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
+  table.st th, table.st td { border-bottom:1px solid var(--line-soft); padding:4px 7px; text-align:left; }
+  table.st thead th { background:var(--surface-2); font-size:11.5px; color:var(--ink-3);
+                      letter-spacing:.06em; border-bottom:1px solid var(--line); white-space:nowrap; }
+  table.st td.c, table.st th.c { text-align:center; }
+  table.st tbody tr:hover { background:var(--surface-2); }
+  tr.none td { color:var(--ink-3); }
+  .tag { display:inline-block; font-size:11px; padding:0 7px; border-radius:999px;
+         border:1px solid var(--line-soft); background:var(--surface-2); color:var(--ink-3); }
+  .tag.on { background:var(--ok-bg); color:var(--ok); border-color:transparent; }
+  .tag.no { background:var(--error-bg); color:var(--error); border-color:transparent; }
+  .zero { color:var(--ink-3); }
+  .tblwrap { overflow-x:auto; }
+  .dl { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+  @media (max-width:760px){ .dl { grid-template-columns:1fr; } }
+  .dl .item { background:var(--surface); border:1px solid var(--line-soft);
+              border-radius:var(--radius); padding:10px 12px; }
+  .dl .item h4 { margin:0 0 3px; font-size:13.5px; }
+  .dl .item p { margin:0 0 8px; font-size:12.5px; color:var(--ink-3); }
+  .rowform { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+  .rowform input, .rowform select { width:auto; }
+</style>
+</head>
+<body>
+
+<div id="view-login" class="hidden">
+  <div class="login-wrap">
+    <div class="login-card">
+      <p class="kicker">埼玉県高体連 空手道専門部</p>
+      <h1>申込システム 管理</h1>
+      <label>管理者パスワード
+        <input type="password" id="pw" autocomplete="current-password">
+      </label>
+      <div id="login-error" class="errbox hidden"></div>
+      <button id="btn-login" class="btn primary">ログイン</button>
+      <p class="note">学校の先生用の画面は <a href="./">こちら</a> です。</p>
+    </div>
+  </div>
+</div>
+
+<div id="view-app" class="hidden">
+<div class="wrap">
+  <header class="top">
+    <p class="kicker">大会申込システム ｜ 管理（専門部）</p>
+    <h1 id="hd-title">—</h1>
+    <div class="facts">
+      <span class="due hidden" id="hd-due"></span>
+      <a id="btn-logout">ログアウト</a>
+    </div>
+  </header>
+
+  <nav class="steps" id="tabs">
+    <button class="step" data-tab="status" aria-current="page"><span>受付状況</span></button>
+    <button class="step" data-tab="uploads"><span>提出書類</span><span class="st" id="st-up">—</span></button>
+    <button class="step" data-tab="export"><span>データ出力</span></button>
+    <button class="step" data-tab="settings"><span>大会設定</span></button>
+    <button class="step" data-tab="accounts"><span>アカウント</span></button>
+  </nav>
+
+  <div id="weak" class="notice hidden">
+    管理者パスワードが以前のまま（暗号化されていない状態）です。「大会設定」タブで変更してください。
+  </div>
+
+  <!-- 受付状況 -->
+  <section id="tab-status">
+    <section class="blk">
+      <div class="blk-head"><h2>受付状況</h2>
+        <span class="aux"><label class="inline" style="margin:0"><input type="checkbox" id="only-none" style="width:auto"> エントリー未入力の学校だけ</label></span>
+      </div>
+      <div class="sum" id="sum"></div>
+      <div class="tblwrap">
+        <table class="st" id="st-table">
+          <thead><tr>
+            <th>学校</th><th class="c">顧問</th><th class="c">部員</th>
+            <th class="c">団体形<br>男/女</th><th class="c">団体組手<br>男/女</th>
+            <th class="c">個人形<br>男/女</th><th class="c">個人組手<br>男/女</th>
+            <th class="c">エントリー</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="hint">数字は人数です。団体組手の「3」「5」は人数制、「—」は出場しない設定。</p>
+    </section>
+  </section>
+
+  <!-- 提出書類 -->
+  <section id="tab-uploads" class="hidden">
+    <section class="blk">
+      <div class="blk-head"><h2>押印済み申込書</h2>
+        <span class="aux"><label class="inline" style="margin:0"><input type="checkbox" id="only-noup"
+          style="width:auto"> 未提出の学校だけ</label></span>
+      </div>
+      <div class="sum" id="up-sum"></div>
+      <p style="margin:12px 0 0">
+        <a class="btn primary" href="admin_api.php?action=admin_download_zip">最新のぶんをまとめて（ZIP）</a>
+        <a class="btn" href="admin_api.php?action=admin_download_zip&amp;all=1">出し直しも含めて全部（ZIP）</a>
+      </p>
+      <div class="tblwrap">
+        <table class="st" id="up-table">
+          <thead><tr><th>学校</th><th class="c">提出</th><th>いちばん新しい提出</th><th>取り出す</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="hint">提出物は公開フォルダの外（<span class="num">~/entry_data/uploads/</span>）に置かれ、
+        この画面からだけ取り出せます。学校が出し直した場合は<b>いちばん新しいもの</b>が提出物です
+        （古いものも消さずに残ります）。</p>
+    </section>
+  </section>
+
+  <!-- データ出力 -->
+  <section id="tab-export" class="hidden">
+    <section class="blk">
+      <div class="blk-head"><h2>データ出力</h2>
+        <span class="aux">Excelでそのまま開けます（BOM付きUTF-8のCSV）</span></div>
+      <div class="dl">
+        <div class="item"><h4>参加校一覧（Excel）</h4>
+          <p>例年の様式そのまま。行＝学校・列＝種目で、団体は○、個人は人数と別枠シードの2列。
+             合計行は開いた時点で計算されます。</p>
+          <a class="btn primary" href="admin_api.php?action=export&kind=schoollist">ダウンロード</a></div>
+        <div class="item"><h4>顧問出欠（CSV）</h4>
+          <p>通番・学校名・顧問名・1日目・2日目。役割の列も付けてあります（不要なら消してください）。</p>
+          <a class="btn" href="admin_api.php?action=export&kind=advisors">ダウンロード</a></div>
+        <div class="item"><h4>タイマー用 選手名簿（CSV）</h4>
+          <p>団体組手の登録選手（補欠含む）。タイマーの <span class="num">team_roster.csv</span> として置くだけで使えます。</p>
+          <a class="btn" href="admin_api.php?action=export&kind=roster_m">男子</a>
+          <a class="btn" href="admin_api.php?action=export&kind=roster_w">女子</a></div>
+        <div class="item"><h4>集計（CSV）</h4>
+          <p>学校ごとの顧問数・部員数・種目別人数。表計算で並べ替えたいときに。</p>
+          <a class="btn" href="admin_api.php?action=export&kind=schools">ダウンロード</a></div>
+        <div class="item"><h4>抽選用データ（JSON）</h4>
+          <p>組合せ抽選に渡す候補一式。種目・階級ごとの<b>シード選手（順位順）</b>と
+             <b>学校別の正選手（番手順）</b>。補欠は含みません。</p>
+          <a class="btn" href="admin_api.php?action=export&kind=draw">ダウンロード</a></div>
+      </div>
+      <div class="pane" style="margin-top:14px">
+        <h3>組合せ抽選（抽選会の準備）</h3>
+        <p style="margin:0 0 8px">エントリー締切後、<b>手元のパソコンで「抽選会準備」をダブルクリックするだけ</b>です
+          （karate-timer-system フォルダの <span class="num">抽選会準備.bat</span>。
+          この画面の管理者パスワードを聞かれます）。全種目のトーナメント盤面が自動で生成され、
+          下の一覧ページにそろいます。</p>
+        <p style="margin:0 0 6px">
+          <a class="btn primary" href="../draw/t/" target="_blank">組合せの盤面一覧をひらく</a>
+          <a class="btn" href="../draw/" target="_blank">従来の調整画面</a></p>
+        <p class="hint" style="margin:0">盤面の一覧にはBASIC認証（drawのパスワード）が掛かっています。
+          組合せの規則（表の形・シード位置）は手元のPythonだけが持ち、サーバーには置かない決まりです。
+          上の「抽選用データ」は、候補を手で直してから流し直したいとき用です。</p>
+      </div>
+    </section>
+  </section>
+
+  <!-- 大会設定 -->
+  <section id="tab-settings" class="hidden">
+    <section class="blk">
+      <div class="blk-head"><h2>受付中の大会</h2>
+        <span class="aux">ここで選んだ大会が、先生方の画面に出ます</span></div>
+      <div class="pane" style="margin-top:12px">
+        <div class="rowform">
+          <select id="set-tid" style="min-width:22em"></select>
+          <label class="inline" style="margin:0">締切
+            <input type="text" id="set-deadline" class="num" placeholder="2026-09-25" size="12"></label>
+          <button class="btn primary" id="set-save">保存</button>
+          <span id="set-msg" class="okmsg"></span>
+        </div>
+        <p class="hint">締切を入れると、先生方の画面に「あと○日」と出ます。空欄なら表示しません。</p>
+      </div>
+      <div id="set-errors" class="errbox hidden"></div>
+    </section>
+    <section class="blk">
+      <div class="blk-head"><h2>管理者パスワード</h2></div>
+      <div class="pane" style="margin-top:12px">
+        <div class="rowform">
+          <input type="password" id="adm-pw" placeholder="新しいパスワード（8文字以上）" size="28">
+          <button class="btn" id="adm-save">変更</button>
+          <span id="adm-msg" class="okmsg"></span>
+        </div>
+        <p class="hint">変更すると暗号化して保存されます（元のパスワードは残りません）。</p>
+      </div>
+      <div id="adm-errors" class="errbox hidden"></div>
+    </section>
+  </section>
+
+  <!-- アカウント -->
+  <section id="tab-accounts" class="hidden">
+    <section class="blk">
+      <div class="blk-head"><h2>学校アカウント</h2>
+        <span class="aux">パスワードを忘れた学校への対応</span></div>
+      <p class="hint">パスワードは暗号化して保存しているため、いまの値を見ることはできません。
+        新しいものを決めて、その場で学校へ伝えてください。</p>
+      <div class="tblwrap">
+        <table class="st" id="acc-table">
+          <thead><tr><th>学校</th><th>校長</th><th class="c">顧問</th><th>新しいパスワード</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="acc-errors" class="errbox hidden"></div>
+    </section>
+  </section>
+</div>
+</div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+let A = null;
+
+async function api(action, data) {
+  const res = await fetch(data === undefined ? `admin_api.php?action=${action}` : "admin_api.php", {
+    method: data === undefined ? "GET" : "POST",
+    headers: data === undefined ? {} : { "Content-Type": "application/json", "X-Entry-Api": "1" },
+    body: data === undefined ? undefined : JSON.stringify({ action, ...data }),
+  });
+  let b = null;
+  try { b = await res.json(); } catch {}
+  if (!b) throw new Error(`サーバーから読めない応答（HTTP ${res.status}）`);
+  return b;
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function showErrors(sel, body) {
+  const box = $(sel);
+  const msgs = body.errors || (body.error ? [body.error] : []);
+  if (msgs.length) { box.textContent = msgs.map((m) => "・" + m).join("\n"); box.classList.remove("hidden"); }
+  else box.classList.add("hidden");
+  return msgs.length > 0;
+}
+
+function flash(sel, t) { const e = $(sel); e.textContent = t; setTimeout(() => { e.textContent = ""; }, 4000); }
+
+async function load() {
+  const b = await api("admin_state");
+  if (!b.ok) { $("#view-login").classList.remove("hidden"); $("#view-app").classList.add("hidden"); return; }
+  A = b;
+  $("#view-login").classList.add("hidden");
+  $("#view-app").classList.remove("hidden");
+  $("#hd-title").textContent = A.tournament
+    ? `令和${A.year}年度 ${A.tournament.name}` : "受付中の大会なし";
+  $("#weak").classList.toggle("hidden", !A.weak_password);
+  renderDue(); renderSummary(); renderStatus(); renderUploads(); renderSettings(); renderAccounts();
+}
+
+function renderDue() {
+  const el = $("#hd-due");
+  const d = A.tournament && A.tournament.deadline;
+  if (!d) { el.classList.add("hidden"); return; }
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  let text = `締切 ${d}`;
+  if (m) {
+    const days = Math.ceil((new Date(+m[1], +m[2] - 1, +m[3]) - new Date()) / 86400000);
+    text = `締切 ${+m[2]}月${+m[3]}日` + (days >= 0 ? `（あと${days}日）` : "（締切済み）");
+  }
+  el.textContent = text; el.classList.remove("hidden");
+}
+
+function renderSummary() {
+  const st = A.status;
+  const entered = st.filter((r) => r.entered > 0).length;
+  const people = st.reduce((a, r) => a + r.entered, 0);
+  const members = st.reduce((a, r) => a + r.members, 0);
+  $("#sum").innerHTML = [
+    ["エントリー済みの学校", `${entered}<small>/${st.length}校</small>`],
+    ["エントリー人数", `${people}<small>名</small>`],
+    ["登録部員", `${members}<small>名</small>`],
+    ["未入力の学校", `${st.length - entered}<small>校</small>`],
+  ].map(([l, v]) => `<div class="card-n"><div class="lbl">${l}</div><div class="v">${v}</div></div>`).join("");
+}
+
+function pair(a, b) {
+  const f = (n) => n > 0 ? `<b>${n}</b>` : '<span class="zero">0</span>';
+  return `${f(a)} / ${f(b)}`;
+}
+
+function renderStatus() {
+  const onlyNone = $("#only-none").checked;
+  const tb = $("#st-table tbody");
+  const rows = A.status.filter((r) => !onlyNone || r.entered === 0);
+  tb.innerHTML = rows.map((r) => {
+    const c = r.counts;
+    const mode = (m) => m === "none" ? "—" : (m || "");
+    return `<tr class="${r.entered === 0 ? "none" : ""}">
+      <td>${esc(r.name)}</td>
+      <td class="c">${r.advisors || '<span class="zero">0</span>'}</td>
+      <td class="c">${r.members || '<span class="zero">0</span>'}</td>
+      <td class="c">${pair(c["男子"].tk, c["女子"].tk)}</td>
+      <td class="c">${pair(c["男子"].tku, c["女子"].tku)}
+        ${r.entered > 0 ? `<div class="tag">${esc(mode(r.m_mode))}/${esc(mode(r.w_mode))}</div>` : ""}</td>
+      <td class="c">${pair(c["男子"].k, c["女子"].k)}</td>
+      <td class="c">${pair(c["男子"].ku, c["女子"].ku)}</td>
+      <td class="c">${r.entered > 0
+        ? `<span class="tag on">${r.entered}名</span>` : '<span class="tag no">未入力</span>'}</td>
+    </tr>`;
+  }).join("");
+}
+
+/* 押印済み申込書。提出物はファイル名だけで管理している（uploads.php の説明）ので、
+   ここに出るのは admin_state が実フォルダを見て返した内容そのもの */
+function renderUploads() {
+  const st = A.status;
+  const done = st.filter((r) => (r.uploads || []).length > 0);
+  const files = st.reduce((a, r) => a + (r.uploads || []).length, 0);
+  $("#up-sum").innerHTML = [
+    ["提出済みの学校", `${done.length}<small>/${st.length}校</small>`],
+    ["未提出の学校", `${st.length - done.length}<small>校</small>`],
+    ["ファイル", `${files}<small>件</small>`],
+  ].map(([l, v]) => `<div class="card-n"><div class="lbl">${l}</div><div class="v">${v}</div></div>`).join("");
+
+  const badge = $("#st-up");
+  badge.textContent = done.length ? `${done.length}/${st.length}` : "未";
+  badge.classList.toggle("done", done.length > 0);
+
+  const onlyNone = $("#only-noup").checked;
+  $("#up-table tbody").innerHTML = st.filter((r) => !onlyNone || !(r.uploads || []).length)
+    .map((r) => {
+      const ups = r.uploads || [];
+      const latest = ups[0];
+      return `<tr class="${ups.length ? "" : "none"}">
+        <td>${esc(r.name)}</td>
+        <td class="c">${ups.length ? '<span class="tag on">提出済</span>'
+                                   : '<span class="tag no">未提出</span>'}</td>
+        <td class="num">${latest ? esc(latest.at) : ""}
+          ${latest ? `<span class="zero"> ${esc(latest.ext.toUpperCase())} ${esc(latest.size_text)}</span>` : ""}</td>
+        <td>${ups.map((u, i) =>
+          `<a href="admin_api.php?action=admin_download_upload&name=${encodeURIComponent(u.name)}"
+             >${i === 0 ? "最新" : esc(u.at.slice(5, 16))}</a>`).join("　")}</td>
+      </tr>`;
+    }).join("");
+}
+
+function renderSettings() {
+  const sel = $("#set-tid");
+  sel.innerHTML = '<option value="">（受付を止める）</option>' +
+    Object.entries(A.tournaments).map(([tid, t]) =>
+      `<option value="${esc(tid)}" ${tid === A.active ? "selected" : ""}>${esc(t.name)}</option>`).join("");
+  $("#set-deadline").value = (A.tournament && A.tournament.deadline) || "";
+}
+
+function renderAccounts() {
+  $("#acc-table tbody").innerHTML = A.status.map((r) => `
+    <tr data-sid="${esc(r.school_id)}">
+      <td>${esc(r.name)}</td><td>${esc(r.principal)}</td>
+      <td class="c">${r.advisors}</td>
+      <td><input type="text" class="np" placeholder="新しいパスワード" size="18"></td>
+      <td><button class="btn rst">再設定</button></td>
+    </tr>`).join("");
+  $$("#acc-table .rst").forEach((b) => (b.onclick = async () => {
+    const tr = b.closest("tr");
+    const pw = tr.querySelector(".np").value;
+    const body = await api("admin_reset_password", { school_id: tr.dataset.sid, password: pw });
+    if (showErrors("#acc-errors", body.ok ? {} : body)) return;
+    tr.querySelector(".np").value = "";
+    b.textContent = "変更しました";
+    setTimeout(() => { b.textContent = "再設定"; }, 4000);
+  }));
+}
+
+function switchTab(name) {
+  $$(".step").forEach((b) => b.dataset.tab === name
+    ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
+  ["status", "uploads", "export", "settings", "accounts"].forEach((t) =>
+    $("#tab-" + t).classList.toggle("hidden", t !== name));
+}
+
+window.addEventListener("DOMContentLoaded", async () => {
+  $$(".step").forEach((b) => (b.onclick = () => switchTab(b.dataset.tab)));
+  $("#btn-login").onclick = async () => {
+    const b = await api("admin_login", { password: $("#pw").value });
+    if (!b.ok) { showErrors("#login-error", b); return; }
+    await load();
+  };
+  $("#pw").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#btn-login").click(); });
+  $("#btn-logout").onclick = async () => {
+    await api("admin_logout", {});
+    A = null; $("#view-app").classList.add("hidden");
+    $("#view-login").classList.remove("hidden"); $("#pw").value = "";
+  };
+  $("#only-none").onchange = renderStatus;
+  $("#only-noup").onchange = renderUploads;
+  $("#set-save").onclick = async () => {
+    const b = await api("admin_set_tournament",
+      { tournament_id: $("#set-tid").value, deadline: $("#set-deadline").value });
+    if (showErrors("#set-errors", b.ok ? {} : b)) return;
+    flash("#set-msg", "保存しました"); await load();
+  };
+  $("#adm-save").onclick = async () => {
+    const b = await api("admin_set_password", { password: $("#adm-pw").value });
+    if (showErrors("#adm-errors", b.ok ? {} : b)) return;
+    $("#adm-pw").value = ""; flash("#adm-msg", "変更しました"); await load();
+  };
+  await load().catch(() => $("#view-login").classList.remove("hidden"));
+});
+</script>
+</body>
+</html>

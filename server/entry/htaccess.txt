@@ -1,0 +1,17 @@
+# 申込窓口の保護。**サーバーでは「.htaccess」という名前に変えて置くこと**
+# （先頭がドットのファイルは手元で扱いにくいので、配布時だけ htaccess.txt にしてある）
+#
+# 目的: 設置作業のあいだ www の中に仮置きするDB（実名が入る）が、万一
+# URL から取られないようにする。setup.php が外へ移すまでの保険。
+
+<IfModule mod_authz_core.c>
+  <FilesMatch "\.(sqlite3|sqlite|db|jsonl)$">
+    Require all denied
+  </FilesMatch>
+</IfModule>
+<IfModule !mod_authz_core.c>
+  <FilesMatch "\.(sqlite3|sqlite|db|jsonl)$">
+    Order allow,deny
+    Deny from all
+  </FilesMatch>
+</IfModule>

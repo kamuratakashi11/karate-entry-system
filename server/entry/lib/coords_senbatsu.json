@@ -1,0 +1,29 @@
+{
+  "year": "C3",
+  "tournament_name": "I3",
+  "date": "M7",
+  "school_name": "C8",
+  "principal": "C9",
+  "head_advisor": "O9",
+  "advisors": [
+    {"name": "A42", "d1": "E42", "d2": ""},
+    {"name": "A43", "d1": "E43", "d2": ""},
+    {"name": "K42", "d1": "U42", "d2": ""},
+    {"name": "K43", "d1": "U43", "d2": ""}
+  ],
+  "start_row": 16,
+  "cap": 22,
+  "offset": 46,
+  "cols": {
+    "name": 2,
+    "grade": 3,
+    "dob": 4,
+    "jkf_no": 23,
+    "m_kumite_選抜の部": 11,
+    "m_kumite_一年生の部": 13,
+    "m_kumite_高入生の部": 15,
+    "w_kumite_選抜の部": 17,
+    "w_kumite_一年生の部": 19,
+    "w_kumite_高入生の部": 21
+  }
+}

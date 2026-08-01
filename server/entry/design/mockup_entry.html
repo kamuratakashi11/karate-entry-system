@@ -1,0 +1,446 @@
+<title>申込システム デザイン案</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    color-scheme: light dark;
+    --paper:#eff1f5; --surface:#fff; --surface-2:#f6f7fa;
+    --line:#c8cfdb; --line-soft:#e5e8ef; --rule:#8e99ab;
+    --ink:#1a1f2b; --ink-2:#515b6d; --ink-3:#7d8798;
+    --accent:#2e4a7d; --accent-ink:#fff; --accent-bg:#dce6f5;
+    --error:#a8322a; --error-bg:#fbeae8;
+    --warn:#8a5a12;  --warn-bg:#fbf1de;
+    --ok:#1a7a4e;    --ok-bg:#dff3e7;
+    --radius:3px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper:#12151b; --surface:#1a1e26; --surface-2:#21262f;
+      --line:#3a424f; --line-soft:#272d37; --rule:#5d6878;
+      --ink:#e4e8ef; --ink-2:#a7b0be; --ink-3:#79828f;
+      --accent:#7ea3dd; --accent-ink:#11151c; --accent-bg:#22304a;
+      --error:#f0908a; --error-bg:#3a2321; --warn:#e0b366; --warn-bg:#362c1a;
+      --ok:#5fc98f; --ok-bg:#122b1f; }
+  }
+  :root[data-theme="dark"]{--paper:#12151b;--surface:#1a1e26;--surface-2:#21262f;
+    --line:#3a424f;--line-soft:#272d37;--rule:#5d6878;--ink:#e4e8ef;--ink-2:#a7b0be;
+    --ink-3:#79828f;--accent:#7ea3dd;--accent-ink:#11151c;--accent-bg:#22304a;
+    --error:#f0908a;--error-bg:#3a2321;--warn:#e0b366;--warn-bg:#362c1a;
+    --ok:#5fc98f;--ok-bg:#122b1f;}
+  :root[data-theme="light"]{--paper:#eff1f5;--surface:#fff;--surface-2:#f6f7fa;
+    --line:#c8cfdb;--line-soft:#e5e8ef;--rule:#8e99ab;--ink:#1a1f2b;--ink-2:#515b6d;
+    --ink-3:#7d8798;--accent:#2e4a7d;--accent-ink:#fff;--accent-bg:#dce6f5;
+    --error:#a8322a;--error-bg:#fbeae8;--warn:#8a5a12;--warn-bg:#fbf1de;
+    --ok:#1a7a4e;--ok-bg:#dff3e7;}
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font-family:"Yu Gothic Medium","游ゴシック Medium","Hiragino Sans",
+                "Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;
+    font-size:14px; line-height:1.6; }
+  .num { font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;
+         font-variant-numeric:tabular-nums; }
+  .wrap { max-width:1080px; margin:0 auto; padding:16px 16px 96px; }
+
+  /* ---- 書類の頭（抽選画面と同じ形） ---- */
+  header.top { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px;
+    padding-bottom:9px; border-bottom:2px solid var(--ink); }
+  .kicker { width:100%; margin:0 0 2px; font-size:11px; letter-spacing:.16em; color:var(--ink-3); }
+  header.top h1 { margin:0; font-size:19px; letter-spacing:.02em; }
+  .facts { display:flex; gap:14px; flex-wrap:wrap; margin-left:auto; align-items:baseline;
+           color:var(--ink-2); font-size:12.5px; }
+  .facts b { color:var(--ink); font-weight:600; }
+  .facts a { color:var(--ink-3); text-decoration:underline; text-underline-offset:3px; }
+  .due { padding:1px 8px; border:1px solid var(--line); border-radius:999px;
+         background:var(--surface); font-size:12px; color:var(--ink-2); }
+
+  /* ---- 手順タブ（下線式・状態つき） ---- */
+  nav.steps { display:flex; gap:2px; margin:14px 0 0; border-bottom:1px solid var(--line-soft);
+              overflow-x:auto; }
+  .step { appearance:none; background:none; border:none; cursor:pointer; font:inherit;
+    padding:8px 14px 9px; color:var(--ink-2); border-bottom:2px solid transparent;
+    white-space:nowrap; display:flex; align-items:center; gap:7px; }
+  .step:hover { color:var(--ink); }
+  .step[aria-current] { color:var(--ink); font-weight:600; border-bottom-color:var(--accent); }
+  .step .st { font-size:10.5px; padding:0 6px; border-radius:999px;
+              background:var(--surface-2); border:1px solid var(--line-soft); color:var(--ink-3); }
+  .step .st.done { background:var(--ok-bg); border-color:transparent; color:var(--ok); }
+  .step:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+
+  /* ---- 節 ---- */
+  section.blk { margin-top:26px; }
+  .blk-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+              padding-bottom:6px; border-bottom:1px solid var(--rule); }
+  .blk-head h2 { margin:0; font-size:15.5px; font-weight:600; letter-spacing:.02em; }
+  .blk-head .no { font-size:11px; color:var(--ink-3); letter-spacing:.12em; }
+  .blk-head .aux { margin-left:auto; font-size:12.5px; color:var(--ink-2); }
+  .hint { margin:6px 0 0; font-size:12.5px; color:var(--ink-3); }
+
+  .duo { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px; }
+  @media (max-width:760px){ .duo { grid-template-columns:1fr; } }
+
+  .pane { background:var(--surface); border:1px solid var(--line-soft);
+          border-radius:var(--radius); padding:10px 12px 12px; }
+  .pane h3 { margin:0 0 8px; font-size:13px; font-weight:600; color:var(--ink-2);
+             display:flex; align-items:baseline; gap:8px; }
+  .pane h3 .cnt { margin-left:auto; font-size:12px; color:var(--ink-3); }
+  .pane.off { background:var(--surface-2); color:var(--ink-3); }
+  .pane.off .offnote { font-size:13px; padding:14px 2px; }
+
+  /* ---- 表・入力 ---- */
+  table.grid { width:100%; border-collapse:collapse; }
+  .grid th { text-align:left; font-size:11.5px; font-weight:600; color:var(--ink-3);
+             letter-spacing:.06em; padding:3px 6px; border-bottom:1px solid var(--line-soft); }
+  .grid td { padding:3px 4px; border-bottom:1px solid var(--line-soft); }
+  .grid tr:last-child td { border-bottom:none; }
+  .slot { width:2.6em; color:var(--ink-3); font-size:12px; text-align:center;
+          border-right:1px solid var(--line-soft); }
+  select, input[type=text] {
+    font:inherit; color:var(--ink); background:var(--surface);
+    border:1px solid var(--line); border-radius:var(--radius); padding:4px 7px; width:100%; }
+  select:focus-visible, input:focus-visible, button:focus-visible {
+    outline:2px solid var(--accent); outline-offset:1px; }
+  input.rk { width:4.2em; text-align:center; }
+  input:disabled { background:var(--surface-2); color:var(--ink-3); border-color:var(--line-soft); }
+  td.raux { width:5em; }
+  td.del { width:2em; text-align:center; }
+  .x { border:none; background:none; color:var(--ink-3); cursor:pointer; font-size:14px;
+       padding:2px 6px; border-radius:var(--radius); }
+  .x:hover { color:var(--error); background:var(--error-bg); }
+  .addrow { margin-top:7px; appearance:none; font:inherit; cursor:pointer;
+    background:none; border:1px dashed var(--line); border-radius:var(--radius);
+    color:var(--ink-2); padding:4px 12px; font-size:12.5px; }
+  .addrow:hover { border-color:var(--rule); color:var(--ink); }
+
+  /* ---- 階級の集計チップ ---- */
+  .classes { display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 8px; }
+  .wchip { display:flex; align-items:baseline; gap:6px; font-size:12px;
+    padding:2px 9px; border:1px solid var(--line-soft); border-radius:999px;
+    background:var(--surface-2); color:var(--ink-3); }
+  .wchip b { font-weight:600; font-size:12.5px; }
+  .wchip.on { background:var(--accent-bg); border-color:transparent; color:var(--ink); }
+  .wchip.on b { color:var(--accent); }
+
+  .kubun-注 { font-size:12px; color:var(--ink-3); margin-top:8px; }
+
+  /* ---- 保存バー ---- */
+  .savebar { position:fixed; left:0; right:0; bottom:0; z-index:10;
+    background:var(--surface); border-top:1px solid var(--line);
+    box-shadow:0 -4px 14px rgba(20,26,40,.06); }
+  .savebar .in { max-width:1080px; margin:0 auto; padding:9px 16px;
+    display:flex; align-items:center; gap:14px; }
+  .dirty { display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-2); }
+  .dirty .dot { width:8px; height:8px; border-radius:50%; background:var(--warn); }
+  .savebar .sp { flex:1; }
+  .btn { font:inherit; cursor:pointer; border-radius:var(--radius);
+    padding:7px 18px; border:1px solid var(--line); background:var(--surface); color:var(--ink); }
+  .btn.primary { background:var(--accent); border-color:var(--accent);
+    color:var(--accent-ink); font-weight:600; letter-spacing:.04em; }
+  .btn.primary:hover { filter:brightness(1.08); }
+
+  /* ---- 別案・脚注 ---- */
+  .altbox { margin-top:34px; border:1px dashed var(--rule); border-radius:var(--radius);
+    padding:12px 14px; background:var(--surface-2); }
+  .altbox h2 { margin:0 0 4px; font-size:13.5px; }
+  .altbox p { margin:4px 0 10px; font-size:12.5px; color:var(--ink-2); }
+  table.mx { border-collapse:collapse; background:var(--surface); font-size:13px; }
+  .mx th, .mx td { border:1px solid var(--line-soft); padding:4px 10px; }
+  .mx th { background:var(--surface-2); font-weight:600; font-size:12px; color:var(--ink-2); }
+  .mx td.c { text-align:center; color:var(--ink-3); }
+  .mx .who b { font-weight:600; }
+  .mx .who small { color:var(--ink-3); margin-left:.5em; }
+
+  footer.notes { margin-top:30px; padding-top:10px; border-top:1px solid var(--line-soft);
+    font-size:12.5px; color:var(--ink-3); }
+  footer.notes ul { margin:6px 0 0; padding-left:1.4em; }
+  footer.notes li { margin:2px 0; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .wchip { transition:background .15s, color .15s; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="top">
+    <p class="kicker">大会申込システム ｜ 埼玉県高体連 空手道専門部</p>
+    <h1>令和8年度 新人大会 — 参加申込</h1>
+    <div class="facts">
+      <span>学校 <b>テスト高校</b></span>
+      <span class="due">締切 9月25日（金） あと12日</span>
+      <a href="#">ログアウト</a>
+    </div>
+  </header>
+
+  <nav class="steps" aria-label="申込の手順">
+    <button class="step"><span>1. 顧問登録</span><span class="st done">済 2名</span></button>
+    <button class="step"><span>2. 部員名簿</span><span class="st done">済 6名</span></button>
+    <button class="step" aria-current="page"><span>3. 大会エントリー</span><span class="st">入力中</span></button>
+    <button class="step"><span>4. 申込書</span><span class="st">未</span></button>
+  </nav>
+
+  <!-- 3.1 団体形 -->
+  <section class="blk">
+    <div class="blk-head">
+      <span class="no">3.1</span><h2>団体形</h2>
+      <span class="aux">正 3名・補欠 3名まで</span>
+    </div>
+    <div class="duo">
+      <div class="pane">
+        <h3>男子 <span class="cnt">3名</span></h3>
+        <table class="grid">
+          <tr><td class="slot">正</td><td><select><option>開発太郎（2年）</option></select></td></tr>
+          <tr><td class="slot">正</td><td><select><option>開発次郎（1年）</option></select></td></tr>
+          <tr><td class="slot">正</td><td><select><option>開発四郎（2年）</option></select></td></tr>
+          <tr><td class="slot">補</td><td><select><option value=""></option></select></td></tr>
+        </table>
+      </div>
+      <div class="pane">
+        <h3>女子 <span class="cnt">3名</span></h3>
+        <table class="grid">
+          <tr><td class="slot">正</td><td><select><option>開発花子（2年）</option></select></td></tr>
+          <tr><td class="slot">正</td><td><select><option>開発梅子（1年）</option></select></td></tr>
+          <tr><td class="slot">正</td><td><select><option>開発桜子（1年）</option></select></td></tr>
+          <tr><td class="slot">補</td><td><select><option value=""></option></select></td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3.2 団体組手 -->
+  <section class="blk">
+    <div class="blk-head">
+      <span class="no">3.2</span><h2>団体組手</h2>
+      <span class="aux">5人制＝正3〜5名・補2 ／ 3人制＝正2〜3名・補1</span>
+    </div>
+    <div class="duo">
+      <div class="pane">
+        <h3>男子
+          <select style="width:auto" aria-label="男子の人数制">
+            <option>3人制</option><option>5人制</option><option>出場しない</option>
+          </select>
+          <span class="cnt">正3・補1</span>
+        </h3>
+        <table class="grid">
+          <tr><td class="slot">正</td><td><select><option>開発太郎（2年）</option></select></td></tr>
+          <tr><td class="slot">正</td><td><select><option>開発次郎（1年）</option></select></td></tr>
+          <tr><td class="slot">正</td><td><select><option>開発四郎（2年）</option></select></td></tr>
+          <tr><td class="slot">補</td><td><select><option>開発五郎（1年）</option></select></td></tr>
+        </table>
+      </div>
+      <div class="pane off">
+        <h3>女子
+          <select style="width:auto" aria-label="女子の人数制">
+            <option>出場しない</option><option>5人制</option><option>3人制</option>
+          </select>
+        </h3>
+        <div class="offnote">出場しない設定です。出場する場合は上で人数制を選んでください。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3.3 個人形 -->
+  <section class="blk">
+    <div class="blk-head">
+      <span class="no">3.3</span><h2>個人形</h2>
+      <span class="aux">正 2名・補欠 1名まで（シードは別枠）</span>
+    </div>
+    <div class="duo">
+      <div class="pane">
+        <h3>男子 <span class="cnt">2名</span></h3>
+        <table class="grid">
+          <thead><tr><th>選手</th><th style="width:7em">区分</th><th style="width:5.5em">順位</th><th></th></tr></thead>
+          <tr>
+            <td><select><option>開発太郎（2年）</option></select></td>
+            <td><select class="kb"><option>正</option><option>シード</option><option>補</option></select></td>
+            <td class="raux"><input type="text" class="rk num" value="1"></td>
+            <td class="del"><button class="x" title="行を外す">×</button></td>
+          </tr>
+          <tr>
+            <td><select><option>開発次郎（1年）</option></select></td>
+            <td><select class="kb"><option selected>補</option><option>正</option><option>シード</option></select></td>
+            <td class="raux"><input type="text" class="rk num" disabled placeholder="—"></td>
+            <td class="del"><button class="x" title="行を外す">×</button></td>
+          </tr>
+        </table>
+        <button class="addrow">＋ 選手を追加</button>
+      </div>
+      <div class="pane">
+        <h3>女子 <span class="cnt">2名</span></h3>
+        <table class="grid">
+          <thead><tr><th>選手</th><th style="width:7em">区分</th><th style="width:5.5em">順位</th><th></th></tr></thead>
+          <tr>
+            <td><select><option>開発花子（2年）</option></select></td>
+            <td><select class="kb"><option selected>シード</option><option>正</option><option>補</option></select></td>
+            <td class="raux"><input type="text" class="rk num" value="2"></td>
+            <td class="del"><button class="x" title="行を外す">×</button></td>
+          </tr>
+          <tr>
+            <td><select><option>開発梅子（1年）</option></select></td>
+            <td><select class="kb"><option>正</option><option>シード</option><option>補</option></select></td>
+            <td class="raux"><input type="text" class="rk num" value="1"></td>
+            <td class="del"><button class="x" title="行を外す">×</button></td>
+          </tr>
+        </table>
+        <button class="addrow">＋ 選手を追加</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3.4 個人組手（階級別） ここが本題 -->
+  <section class="blk">
+    <div class="blk-head">
+      <span class="no">3.4</span><h2>個人組手（階級別）</h2>
+      <span class="aux">出る選手を1行ずつ。階級ごとの人数は下のチップで確認</span>
+    </div>
+    <div class="duo">
+      <div class="pane">
+        <h3>男子 <span class="cnt">4名</span></h3>
+        <div class="classes" id="mchips">
+          <span class="wchip" data-w="-55kg級"><b>-55</b><span>2名</span></span>
+          <span class="wchip" data-w="-61kg級"><b>-61</b><span>1名</span></span>
+          <span class="wchip" data-w="-68kg級"><b>-68</b><span>1名</span></span>
+          <span class="wchip" data-w="-76kg級"><b>-76</b><span>0</span></span>
+          <span class="wchip" data-w="+76kg級"><b>+76</b><span>0</span></span>
+        </div>
+        <table class="grid" id="mku">
+          <thead><tr><th>選手</th><th style="width:6.8em">階級</th><th style="width:6.6em">区分</th><th style="width:5.5em">順位</th><th></th></tr></thead>
+          <tr>
+            <td><select><option>開発次郎（1年）</option></select></td>
+            <td><select class="wt"><option>-55kg級</option><option>-61kg級</option><option>-68kg級</option><option>-76kg級</option><option>+76kg級</option></select></td>
+            <td><select class="kb"><option>正</option><option>シード</option><option>補</option></select></td>
+            <td class="raux"><input type="text" class="rk num" value="2"></td>
+            <td class="del"><button class="x" title="行を外す">×</button></td>
+          </tr>
+          <tr>
+            <td><select><option>開発四郎（2年）</option></select></td>
+            <td><select class="wt"><option selected>-55kg級</option><option>-61kg級</option><option>-68kg級</option><option>-76kg級</option><option>+76kg級</option></select></td>
+            <td><select class="kb"><option selected>シード</option><option>正</option><option>補</option></select></td>
+            <td class="raux"><input type="text" class="rk num" value="1"></td>
+            <td class="del"><button class="x" title="行を外す">×</button></td>
+          </tr>
+          <tr>
+            <td><select><option>開発太郎（2年）</option></select></td>
+            <td><select class="wt"><option selected>-61kg級</option><option>-55kg級</option><option>-68kg級</option><option>-76kg級</option><option>+76kg級</option></select></td>
+            <td><select class="kb"><option>正</option><option>シード</option><option>補</option></select></td>
+            <td class="raux"><input type="text" class="rk num" value="1"></td>
+            <td class="del"><button class="x" title="行を外す">×</button></td>
+          </tr>
+          <tr>
+            <td><select><option>開発五郎（1年）</option></select></td>
+            <td><select class="wt"><option selected>-68kg級</option><option>-55kg級</option><option>-61kg級</option><option>-76kg級</option><option>+76kg級</option></select></td>
+            <td><select class="kb"><option selected>補</option><option>正</option><option>シード</option></select></td>
+            <td class="raux"><input type="text" class="rk num" disabled placeholder="—"></td>
+            <td class="del"><button class="x" title="行を外す">×</button></td>
+          </tr>
+        </table>
+        <button class="addrow" id="mku-add">＋ 選手を追加</button>
+      </div>
+      <div class="pane">
+        <h3>女子 <span class="cnt">2名</span></h3>
+        <div class="classes">
+          <span class="wchip on"><b>-48</b><span>1名</span></span>
+          <span class="wchip"><b>-53</b><span>0</span></span>
+          <span class="wchip"><b>-59</b><span>0</span></span>
+          <span class="wchip"><b>-66</b><span>0</span></span>
+          <span class="wchip on"><b>+66</b><span>1名</span></span>
+        </div>
+        <table class="grid">
+          <thead><tr><th>選手</th><th style="width:6.8em">階級</th><th style="width:6.6em">区分</th><th style="width:5.5em">順位</th><th></th></tr></thead>
+          <tr>
+            <td><select><option>開発梅子（1年）</option></select></td>
+            <td><select class="wt"><option selected>-48kg級</option><option>-53kg級</option><option>-59kg級</option><option>-66kg級</option><option>+66kg級</option></select></td>
+            <td><select class="kb"><option>正</option><option>シード</option><option>補</option></select></td>
+            <td class="raux"><input type="text" class="rk num" value="1"></td>
+            <td class="del"><button class="x" title="行を外す">×</button></td>
+          </tr>
+          <tr>
+            <td><select><option>開発花子（2年）</option></select></td>
+            <td><select class="wt"><option selected>+66kg級</option><option>-48kg級</option><option>-53kg級</option><option>-59kg級</option><option>-66kg級</option></select></td>
+            <td><select class="kb"><option>正</option><option>シード</option><option>補</option></select></td>
+            <td class="raux"><input type="text" class="rk num" value="2"></td>
+            <td class="del"><button class="x" title="行を外す">×</button></td>
+          </tr>
+        </table>
+        <button class="addrow">＋ 選手を追加</button>
+      </div>
+    </div>
+    <p class="kubun-注">「正」「シード」には県大会順位を入れます。「補」に順位は書きません（空欄のまま）。</p>
+  </section>
+
+  <!-- 別案 -->
+  <div class="altbox">
+    <h2>比較用の別案 — 階級を行にした一覧表</h2>
+    <p>1つの表で階級×選手を見渡す案。確認には強いが、入力はセルの中で行うことになり操作が細かくなる。上の「選手1行ずつ＋集計チップ」案との比較用。</p>
+    <table class="mx">
+      <thead><tr><th style="width:6em">階級</th><th>正</th><th>シード</th><th>補</th></tr></thead>
+      <tr><td class="c num">-55</td><td class="who"><b>開発次郎</b><small>順位2</small></td><td class="who"><b>開発四郎</b><small>順位1</small></td><td class="c">—</td></tr>
+      <tr><td class="c num">-61</td><td class="who"><b>開発太郎</b><small>順位1</small></td><td class="c">—</td><td class="c">—</td></tr>
+      <tr><td class="c num">-68</td><td class="c">—</td><td class="c">—</td><td class="who"><b>開発五郎</b></td></tr>
+      <tr><td class="c num">-76</td><td class="c">—</td><td class="c">—</td><td class="c">—</td></tr>
+      <tr><td class="c num">+76</td><td class="c">—</td><td class="c">—</td><td class="c">—</td></tr>
+    </table>
+  </div>
+
+  <footer class="notes">
+    この案で変えたこと
+    <ul>
+      <li>配色・書体・罫線を組合せ調整画面（抽選）と同じ規格に統一。絵文字と丸みの強い部品を廃止</li>
+      <li>個人組手は「階級ごとに10個の表」をやめ、<b>男女それぞれ1つの表（選手・階級・区分・順位）</b>に集約。階級ごとの人数はチップで常時表示</li>
+      <li>個人形も同じ行形式に揃え、ページ全体で入力の型を1種類に</li>
+      <li>「補」を選ぶと順位欄が自動で入力不可になる（順位の入れ間違いを画面側でも防ぐ）</li>
+      <li>保存は画面下の固定バーに集約。未保存の変更があることを常に表示</li>
+      <li>締切と残り日数をヘッダーに常時表示。タブに済/入力中の状態を表示</li>
+    </ul>
+  </footer>
+
+</div>
+
+<div class="savebar">
+  <div class="in">
+    <span class="dirty"><span class="dot"></span>未保存の変更があります</span>
+    <span class="sp"></span>
+    <button class="btn">変更を破棄</button>
+    <button class="btn primary">エントリーを保存（全員分）</button>
+  </div>
+</div>
+
+<script>
+  // モック用の最小限の動き: 「補」で順位を入力不可に／チップの数を数え直す
+  function wire(root) {
+    root.querySelectorAll("select.kb").forEach(function (kb) {
+      kb.addEventListener("change", function () {
+        var rk = kb.closest("tr").querySelector("input.rk");
+        if (!rk) return;
+        var hosu = kb.value === "補";
+        rk.disabled = hosu;
+        if (hosu) rk.value = "";
+        recount();
+      });
+    });
+    root.querySelectorAll("select.wt").forEach(function (wt) {
+      wt.addEventListener("change", recount);
+    });
+  }
+  function recount() {
+    var counts = {};
+    document.querySelectorAll("#mku select.wt").forEach(function (wt) {
+      counts[wt.value] = (counts[wt.value] || 0) + 1;
+    });
+    document.querySelectorAll("#mchips .wchip").forEach(function (ch) {
+      var n = counts[ch.dataset.w] || 0;
+      ch.classList.toggle("on", n > 0);
+      ch.querySelector("span:last-child").textContent = n ? n + "名" : "0";
+    });
+  }
+  document.getElementById("mku-add").addEventListener("click", function () {
+    var tb = document.querySelector("#mku tbody") || document.getElementById("mku");
+    var tr = tb.querySelector("tr:last-child").cloneNode(true);
+    tr.querySelector("input.rk").value = "";
+    tr.querySelector("input.rk").disabled = false;
+    tb.appendChild(tr);
+    wire(tr); recount();
+  });
+  document.querySelectorAll(".x").forEach(function (x) {
+    x.addEventListener("click", function () { x.closest("tr").remove(); recount(); });
+  });
+  wire(document); recount();
+</script>

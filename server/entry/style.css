@@ -1,0 +1,161 @@
+/* 申込窓口の見た目。組合せ調整画面（抽選）と同じ規格。
+   トークン（配色）は tools/draw_prototype/mockup_body.html と揃えてある。 */
+:root {
+  color-scheme: light dark;
+  --paper:#eff1f5; --surface:#fff; --surface-2:#f6f7fa;
+  --line:#c8cfdb; --line-soft:#e5e8ef; --rule:#8e99ab;
+  --ink:#1a1f2b; --ink-2:#515b6d; --ink-3:#7d8798;
+  --accent:#2e4a7d; --accent-ink:#fff; --accent-bg:#dce6f5;
+  --error:#a8322a; --error-bg:#fbeae8;
+  --warn:#8a5a12;  --warn-bg:#fbf1de;
+  --ok:#1a7a4e;    --ok-bg:#dff3e7;
+  --radius:3px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper:#12151b; --surface:#1a1e26; --surface-2:#21262f;
+    --line:#3a424f; --line-soft:#272d37; --rule:#5d6878;
+    --ink:#e4e8ef; --ink-2:#a7b0be; --ink-3:#79828f;
+    --accent:#7ea3dd; --accent-ink:#11151c; --accent-bg:#22304a;
+    --error:#f0908a; --error-bg:#3a2321; --warn:#e0b366; --warn-bg:#362c1a;
+    --ok:#5fc98f; --ok-bg:#122b1f; }
+}
+
+* { box-sizing:border-box; }
+body { margin:0; background:var(--paper); color:var(--ink);
+  font-family:"Yu Gothic Medium","游ゴシック Medium","Hiragino Sans",
+              "Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;
+  font-size:14px; line-height:1.6; }
+.num { font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;
+       font-variant-numeric:tabular-nums; }
+.hidden { display:none !important; }
+.wrap { max-width:1080px; margin:0 auto; padding:16px 16px 96px; }
+
+/* ---- 書類の頭 ---- */
+header.top { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px;
+  padding-bottom:9px; border-bottom:2px solid var(--ink); }
+.kicker { width:100%; margin:0 0 2px; font-size:11px; letter-spacing:.16em; color:var(--ink-3); }
+header.top h1 { margin:0; font-size:19px; letter-spacing:.02em; }
+.facts { display:flex; gap:14px; flex-wrap:wrap; margin-left:auto; align-items:baseline;
+         color:var(--ink-2); font-size:12.5px; }
+.facts b { color:var(--ink); font-weight:600; }
+.facts a { color:var(--ink-3); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+.due { padding:1px 8px; border:1px solid var(--line); border-radius:999px;
+       background:var(--surface); font-size:12px; color:var(--ink-2); }
+
+/* ---- 手順タブ ---- */
+nav.steps { display:flex; gap:2px; margin:14px 0 0; border-bottom:1px solid var(--line-soft);
+            overflow-x:auto; }
+.step { appearance:none; background:none; border:none; cursor:pointer; font:inherit;
+  padding:8px 14px 9px; color:var(--ink-2); border-bottom:2px solid transparent;
+  white-space:nowrap; display:flex; align-items:center; gap:7px; }
+.step:hover { color:var(--ink); }
+.step[aria-current] { color:var(--ink); font-weight:600; border-bottom-color:var(--accent); }
+.step .st { font-size:10.5px; padding:0 6px; border-radius:999px;
+            background:var(--surface-2); border:1px solid var(--line-soft); color:var(--ink-3); }
+.step .st.done { background:var(--ok-bg); border-color:transparent; color:var(--ok); }
+.step:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+
+/* ---- 節 ---- */
+section.blk { margin-top:26px; }
+.blk-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+            padding-bottom:6px; border-bottom:1px solid var(--rule); }
+.blk-head h2 { margin:0; font-size:15.5px; font-weight:600; letter-spacing:.02em; }
+.blk-head .no { font-size:11px; color:var(--ink-3); letter-spacing:.12em; }
+.blk-head .aux { margin-left:auto; font-size:12.5px; color:var(--ink-2); }
+.hint { margin:8px 0 0; font-size:12.5px; color:var(--ink-3); }
+
+.duo { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px; }
+@media (max-width:760px){ .duo { grid-template-columns:1fr; } }
+
+.pane { background:var(--surface); border:1px solid var(--line-soft);
+        border-radius:var(--radius); padding:10px 12px 12px; }
+.pane h3 { margin:0 0 8px; font-size:13px; font-weight:600; color:var(--ink-2);
+           display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.pane h3 .cnt { margin-left:auto; font-size:12px; font-weight:normal; color:var(--ink-3); }
+.pane.off { background:var(--surface-2); }
+.offnote { font-size:13px; color:var(--ink-3); padding:10px 2px; }
+
+/* ---- 表・入力 ---- */
+table.grid { width:100%; border-collapse:collapse; }
+.grid th { text-align:left; font-size:11.5px; font-weight:600; color:var(--ink-3);
+           letter-spacing:.06em; padding:3px 6px; border-bottom:1px solid var(--line-soft); }
+.grid td { padding:3px 4px; border-bottom:1px solid var(--line-soft); }
+.grid tr:last-child td { border-bottom:none; }
+.slot { width:2.6em; color:var(--ink-3); font-size:12px; text-align:center;
+        border-right:1px solid var(--line-soft); }
+select, input[type=text], input[type=password] {
+  font:inherit; color:var(--ink); background:var(--surface);
+  border:1px solid var(--line); border-radius:var(--radius); padding:4px 7px; width:100%; }
+select:focus-visible, input:focus-visible, button:focus-visible, a:focus-visible {
+  outline:2px solid var(--accent); outline-offset:1px; }
+select.wsel { width:auto; }
+input.rk { width:4.2em; text-align:center; }
+input:disabled { background:var(--surface-2); color:var(--ink-3); border-color:var(--line-soft); }
+td.raux { width:5em; }
+td.del { width:2em; text-align:center; }
+.x { border:none; background:none; color:var(--ink-3); cursor:pointer; font-size:14px;
+     padding:2px 6px; border-radius:var(--radius); }
+.x:hover { color:var(--error); background:var(--error-bg); }
+.addrow { margin-top:7px; appearance:none; font:inherit; cursor:pointer;
+  background:none; border:1px dashed var(--line); border-radius:var(--radius);
+  color:var(--ink-2); padding:4px 12px; font-size:12.5px; }
+.addrow:hover { border-color:var(--rule); color:var(--ink); }
+
+/* ---- 階級チップ ---- */
+.classes { display:flex; gap:6px; flex-wrap:wrap; margin:2px 0 8px; }
+.wchip { display:flex; align-items:baseline; gap:6px; font-size:12px;
+  padding:2px 9px; border:1px solid var(--line-soft); border-radius:999px;
+  background:var(--surface-2); color:var(--ink-3); }
+.wchip b { font-weight:600; font-size:12.5px; }
+.wchip.on { background:var(--accent-bg); border-color:transparent; color:var(--ink); }
+.wchip.on b { color:var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .wchip { transition:background .15s, color .15s; }
+}
+
+/* ---- ボタン・報せ ---- */
+.btn { font:inherit; cursor:pointer; border-radius:var(--radius);
+  padding:7px 18px; border:1px solid var(--line); background:var(--surface); color:var(--ink);
+  text-decoration:none; display:inline-block; }
+.btn.primary { background:var(--accent); border-color:var(--accent);
+  color:var(--accent-ink); font-weight:600; letter-spacing:.04em; }
+.btn.primary:hover { filter:brightness(1.08); }
+.errbox { background:var(--error-bg); border:1px solid var(--error); color:var(--error);
+  border-radius:var(--radius); padding:8px 12px; margin:10px 0; white-space:pre-line; font-size:13px; }
+.okmsg { color:var(--ok); font-weight:600; font-size:13px; }
+.notice { background:var(--warn-bg); border-left:3px solid var(--warn); color:var(--ink-2);
+  border-radius:var(--radius); padding:6px 12px; margin:12px 0 0; font-size:13px; }
+
+/* ---- 申込書の提出 ---- */
+.uprow { display:flex; align-items:center; gap:10px 12px; flex-wrap:wrap; }
+.uprow input[type=file] { font:inherit; font-size:12.5px; color:var(--ink-2);
+  width:auto; max-width:100%; flex:1 1 18em; }
+.uprow .btn:disabled { opacity:.5; cursor:default; }
+.uplist td { font-size:12.5px; }
+.uplist a { color:var(--accent); }
+.badge { font-size:10.5px; padding:0 7px; border-radius:999px;
+  background:var(--surface-2); border:1px solid var(--line-soft); color:var(--ink-3); }
+.badge.new { background:var(--ok-bg); border-color:transparent; color:var(--ok); font-weight:600; }
+
+/* ---- 保存バー（エントリータブのみ） ---- */
+.savebar { position:fixed; left:0; right:0; bottom:0; z-index:10;
+  background:var(--surface); border-top:1px solid var(--line);
+  box-shadow:0 -4px 14px rgba(20,26,40,.06); }
+.savebar .in { max-width:1080px; margin:0 auto; padding:9px 16px;
+  display:flex; align-items:center; gap:14px; }
+.dirty { display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-2); }
+.dirty .dot { width:8px; height:8px; border-radius:50%; background:var(--warn); }
+.dirty.clean .dot { background:var(--ok); }
+.savebar .sp { flex:1; }
+
+/* ---- ログイン ---- */
+.login-wrap { max-width:430px; margin:9vh auto 0; padding:0 16px; }
+.login-card { background:var(--surface); border:1px solid var(--line-soft);
+  border-radius:var(--radius); padding:20px 22px 22px; box-shadow:0 8px 30px rgba(20,26,40,.07); }
+.login-card .kicker { margin-bottom:2px; }
+.login-card h1 { margin:0 0 2px; font-size:18px; padding-bottom:8px;
+  border-bottom:2px solid var(--ink); }
+.login-card label { display:block; margin:12px 0 0; font-size:12.5px; color:var(--ink-2); }
+.login-card label > * { margin-top:3px; }
+.login-card .btn { width:100%; margin-top:16px; padding:9px; }
+.login-card .note { margin:8px 0 0; font-size:12px; color:var(--ink-3); }

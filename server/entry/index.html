@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大会申込システム</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ログイン -->
+<div id="view-login" class="hidden">
+  <div class="login-wrap">
+    <div class="login-card">
+      <p class="kicker">埼玉県高体連 空手道専門部</p>
+      <h1>大会申込システム</h1>
+      <label>学校名
+        <select id="login-school"><option value="">読み込み中…</option></select>
+      </label>
+      <label>パスワード
+        <input type="password" id="login-password" autocomplete="current-password">
+      </label>
+      <div id="login-error" class="errbox hidden"></div>
+      <button id="btn-login" class="btn primary">ログイン</button>
+      <p class="note">これまでの申込システムと同じパスワードです。忘れた場合は専門部までご連絡ください。</p>
+    </div>
+  </div>
+</div>
+
+<!-- 本体 -->
+<div id="view-app" class="hidden">
+<div class="wrap">
+
+  <header class="top">
+    <p class="kicker">大会申込システム ｜ 埼玉県高体連 空手道専門部</p>
+    <h1 id="hd-title">—</h1>
+    <div class="facts">
+      <span>学校 <b id="hd-school"></b></span>
+      <span class="due hidden" id="hd-due"></span>
+      <a id="btn-logout">ログアウト</a>
+    </div>
+  </header>
+
+  <nav class="steps" id="tabs" aria-label="申込の手順">
+    <button class="step" data-tab="advisors"><span>1. 顧問登録</span><span class="st" id="st-adv">—</span></button>
+    <button class="step" data-tab="members"><span>2. 部員名簿</span><span class="st" id="st-mem">—</span></button>
+    <button class="step" data-tab="entry"><span>3. 大会エントリー</span><span class="st" id="st-ent">—</span></button>
+    <button class="step" data-tab="form"><span>4. 申込書</span><span class="st" id="st-form">—</span></button>
+  </nav>
+
+  <!-- 1. 顧問 -->
+  <section id="tab-advisors">
+    <section class="blk">
+      <div class="blk-head"><span class="no">1</span><h2>顧問登録</h2>
+        <span class="aux">引率の○×は申込書に載ります</span></div>
+      <div class="pane" style="margin-top:12px">
+        <label style="display:block; font-size:12.5px; color:var(--ink-2)">校長名
+          <input type="text" id="principal" style="width:16em; display:block; margin-top:3px"></label>
+        <table class="grid" style="margin-top:10px" id="adv-table">
+          <thead><tr><th>氏名</th><th style="width:9em">役割</th>
+            <th style="width:4.5em">1日目</th><th style="width:4.5em">2日目</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <button id="adv-add" class="addrow">＋ 顧問を追加</button>
+      </div>
+      <div id="adv-errors" class="errbox hidden"></div>
+      <p><button id="adv-save" class="btn primary">顧問情報を保存</button> <span id="adv-msg" class="okmsg"></span></p>
+    </section>
+  </section>
+
+  <!-- 2. 名簿 -->
+  <section id="tab-members" class="hidden">
+    <section class="blk">
+      <div class="blk-head"><span class="no">2</span><h2>部員名簿</h2>
+        <span class="aux">No. に数字を入れるとその順に並びます（空欄は学年・名前順）</span></div>
+      <div class="pane" style="margin-top:12px">
+        <table class="grid" id="mem-table">
+          <thead><tr><th style="width:4em">No.</th><th>氏名</th><th style="width:6em">性別</th>
+            <th style="width:5em">学年</th><th style="width:9em">生年月日</th><th style="width:8em">JKF番号</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <button id="mem-add" class="addrow">＋ 部員を追加</button>
+      </div>
+      <div id="mem-errors" class="errbox hidden"></div>
+      <p><button id="mem-save" class="btn primary">名簿を保存</button> <span id="mem-msg" class="okmsg"></span></p>
+    </section>
+  </section>
+
+  <!-- 3. エントリー -->
+  <section id="tab-entry" class="hidden">
+    <div id="entry-none" class="hidden"><p class="notice">現在、受付中の大会はありません。</p></div>
+    <div id="entry-body">
+
+      <section class="blk">
+        <div class="blk-head"><span class="no">3.1</span><h2>団体形</h2>
+          <span class="aux" id="aux-tk"></span></div>
+        <div class="duo">
+          <div class="pane" id="pane-m_tk">
+            <h3>男子
+              <select class="wsel part" id="m-tk-part">
+                <option value="yes">出場する</option><option value="no">出場しない</option>
+              </select>
+              <span class="cnt" id="cnt-m_tk"></span></h3>
+            <div class="body"><table class="grid"><tbody id="tbl-m_tk"></tbody></table></div>
+            <div class="offnote hidden">出場しない設定です。出場する場合は上で「出場する」を選んでください。</div>
+          </div>
+          <div class="pane" id="pane-w_tk">
+            <h3>女子
+              <select class="wsel part" id="w-tk-part">
+                <option value="yes">出場する</option><option value="no">出場しない</option>
+              </select>
+              <span class="cnt" id="cnt-w_tk"></span></h3>
+            <div class="body"><table class="grid"><tbody id="tbl-w_tk"></tbody></table></div>
+            <div class="offnote hidden">出場しない設定です。出場する場合は上で「出場する」を選んでください。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="blk">
+        <div class="blk-head"><span class="no">3.2</span><h2>団体組手</h2>
+          <span class="aux" id="aux-tku"></span></div>
+        <div class="duo">
+          <div class="pane" id="pane-m_tku">
+            <h3>男子
+              <select class="wsel part" id="m-mode">
+                <option value="5">5人制</option><option value="3">3人制</option><option value="none">出場しない</option>
+              </select>
+              <span class="cnt" id="cnt-m_tku"></span></h3>
+            <div class="body"><table class="grid"><tbody id="tbl-m_tku"></tbody></table></div>
+            <div class="offnote hidden">出場しない設定です。出場する場合は上で人数制を選んでください。</div>
+          </div>
+          <div class="pane" id="pane-w_tku">
+            <h3>女子
+              <select class="wsel part" id="w-mode">
+                <option value="5">5人制</option><option value="3">3人制</option><option value="none">出場しない</option>
+              </select>
+              <span class="cnt" id="cnt-w_tku"></span></h3>
+            <div class="body"><table class="grid"><tbody id="tbl-w_tku"></tbody></table></div>
+            <div class="offnote hidden">出場しない設定です。出場する場合は上で人数制を選んでください。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="blk">
+        <div class="blk-head"><span class="no">3.3</span><h2>個人形</h2>
+          <span class="aux" id="aux-k"></span></div>
+        <div class="duo">
+          <div class="pane">
+            <h3>男子 <span class="cnt" id="cnt-m_k"></span></h3>
+            <table class="grid ind">
+              <thead><tr><th>選手</th><th style="width:7em">区分</th><th style="width:5.5em">順位</th><th></th></tr></thead>
+              <tbody id="tbl-m_k"></tbody>
+            </table>
+            <button class="addrow add-ind" data-target="m_k">＋ 選手を追加</button>
+          </div>
+          <div class="pane">
+            <h3>女子 <span class="cnt" id="cnt-w_k"></span></h3>
+            <table class="grid ind">
+              <thead><tr><th>選手</th><th style="width:7em">区分</th><th style="width:5.5em">順位</th><th></th></tr></thead>
+              <tbody id="tbl-w_k"></tbody>
+            </table>
+            <button class="addrow add-ind" data-target="w_k">＋ 選手を追加</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="blk">
+        <div class="blk-head"><span class="no">3.4</span><h2>個人組手（階級別）</h2>
+          <span class="aux">出る選手を1行ずつ。階級ごとの人数は上のチップで確認</span></div>
+        <div class="duo">
+          <div class="pane">
+            <h3>男子 <span class="cnt" id="cnt-m_ku"></span></h3>
+            <div class="classes" id="chips-m"></div>
+            <table class="grid ku">
+              <thead><tr><th>選手</th><th class="wcol" style="width:6.8em">階級</th><th style="width:6.6em">区分</th><th style="width:5.5em">順位</th><th></th></tr></thead>
+              <tbody id="tbl-m_ku"></tbody>
+            </table>
+            <button class="addrow add-ku" data-target="m_ku">＋ 選手を追加</button>
+          </div>
+          <div class="pane">
+            <h3>女子 <span class="cnt" id="cnt-w_ku"></span></h3>
+            <div class="classes" id="chips-w"></div>
+            <table class="grid ku">
+              <thead><tr><th>選手</th><th class="wcol" style="width:6.8em">階級</th><th style="width:6.6em">区分</th><th style="width:5.5em">順位</th><th></th></tr></thead>
+              <tbody id="tbl-w_ku"></tbody>
+            </table>
+            <button class="addrow add-ku" data-target="w_ku">＋ 選手を追加</button>
+          </div>
+        </div>
+        <p class="hint">「正」「シード」には県大会順位を入れます。「補」に順位は書きません（自動で入力できなくなります）。</p>
+      </section>
+
+      <div id="entry-errors" class="errbox hidden"></div>
+    </div>
+  </section>
+
+  <!-- 4. 申込書 -->
+  <section id="tab-form" class="hidden">
+    <section class="blk">
+      <div class="blk-head"><span class="no">4.1</span><h2>申込書をつくる</h2></div>
+      <div class="pane" style="margin-top:12px">
+        <p style="margin:4px 0 10px">いま保存されている名簿とエントリーの内容で、正式の様式（Excel）を作ります。</p>
+        <p style="margin:0 0 6px"><a class="btn primary" href="api.php?action=download_form">申込書をダウンロード</a></p>
+        <p class="hint">内容がおかしい場合は「3. 大会エントリー」が保存済みか確認してください。</p>
+      </div>
+    </section>
+
+    <section class="blk">
+      <div class="blk-head"><span class="no">4.2</span><h2>押印して提出</h2>
+        <span class="aux" id="up-limit"></span></div>
+      <div class="pane" style="margin-top:12px">
+        <p style="margin:4px 0 10px">ダウンロードした申込書を印刷し、<b>校長印を押したもの</b>を
+          PDFか写真（スマートフォンで撮ったものでも構いません）にして、ここへ提出してください。</p>
+        <div class="uprow">
+          <input type="file" id="up-file"
+                 accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
+          <button class="btn primary" id="up-send" disabled>提出する</button>
+          <span id="up-msg" class="okmsg"></span>
+        </div>
+        <p class="hint">PDF・JPG・PNG に対応しています。あとから何度でも出し直せます
+          （いちばん新しいものを提出物として扱います）。</p>
+      </div>
+      <div id="up-errors" class="errbox hidden"></div>
+
+      <div class="pane" style="margin-top:12px">
+        <h3>提出したもの <span class="cnt" id="up-count"></span></h3>
+        <table class="grid uplist"><tbody id="up-list"></tbody></table>
+        <div id="up-none" class="offnote">まだ提出されていません。</div>
+      </div>
+    </section>
+  </section>
+
+</div>
+
+<!-- 保存バー（エントリータブでだけ表示） -->
+<div class="savebar hidden" id="savebar">
+  <div class="in">
+    <span class="dirty clean" id="dirty"><span class="dot"></span><span id="dirty-text">保存済み</span></span>
+    <span class="sp"></span>
+    <button class="btn" id="entry-discard">変更を破棄</button>
+    <button class="btn primary" id="entry-save">エントリーを保存（全員分）</button>
+  </div>
+</div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
