@@ -35,6 +35,9 @@
   .dl .item p { margin:0 0 8px; font-size:12.5px; color:var(--ink-3); }
   .rowform { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px; }
   .rowform input, .rowform select { width:auto; }
+  .fl { display:inline-flex; align-items:center; gap:1px; white-space:nowrap; }
+  .fl + .fl { margin-left:8px; }
+  .del-grp { padding:3px 12px; font-size:12.5px; }
 </style>
 </head>
 <body>
@@ -119,7 +122,26 @@
       </div>
       <p class="hint">提出物は公開フォルダの外（<span class="num">~/entry_data/uploads/</span>）に置かれ、
         この画面からだけ取り出せます。学校が出し直した場合は<b>いちばん新しいもの</b>が提出物です
-        （古いものも消さずに残ります）。</p>
+        （古いものも残るので、×で消せます）。</p>
+      <div id="up-errors" class="errbox hidden"></div>
+    </section>
+
+    <section class="blk">
+      <div class="blk-head"><h2>たまったものの整理</h2>
+        <span class="aux">年度（4月始まり）ごとにまとめて消せます</span></div>
+      <p class="hint" style="margin:10px 0 0">
+        大会IDは毎年おなじなので、年度で分けています。<b>消す前に上の「まとめて（ZIP）」で
+        手元に保存してください。</b>消したものは戻せません
+        （いつ何件消したかの記録だけ <span class="num">~/entry_data/uploads_deleted.log</span> に残ります）。</p>
+      <div class="tblwrap">
+        <table class="st" id="grp-table">
+          <thead><tr><th>年度</th><th>大会</th><th class="c">学校</th><th class="c">件数</th>
+            <th class="c">大きさ</th><th>最後の提出</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="grp-errors" class="errbox hidden"></div>
+      <p><span id="grp-msg" class="okmsg"></span></p>
     </section>
   </section>
 
@@ -256,7 +278,8 @@ async function load() {
   $("#hd-title").textContent = A.tournament
     ? `令和${A.year}年度 ${A.tournament.name}` : "受付中の大会なし";
   $("#weak").classList.toggle("hidden", !A.weak_password);
-  renderDue(); renderSummary(); renderStatus(); renderUploads(); renderSettings(); renderAccounts();
+  renderDue(); renderSummary(); renderStatus(); renderUploads(); renderUploadGroups();
+  renderSettings(); renderAccounts();
 }
 
 function renderDue() {
@@ -339,11 +362,65 @@ function renderUploads() {
                                    : '<span class="tag no">未提出</span>'}</td>
         <td class="num">${latest ? esc(latest.at) : ""}
           ${latest ? `<span class="zero"> ${esc(latest.ext.toUpperCase())} ${esc(latest.size_text)}</span>` : ""}</td>
-        <td>${ups.map((u, i) =>
-          `<a href="admin_api.php?action=admin_download_upload&name=${encodeURIComponent(u.name)}"
-             >${i === 0 ? "最新" : esc(u.at.slice(5, 16))}</a>`).join("　")}</td>
+        <td>${ups.map((u, i) => `<span class="fl">
+          <a href="admin_api.php?action=admin_download_upload&name=${encodeURIComponent(u.name)}"
+             >${i === 0 ? "最新" : esc(u.at.slice(5, 16))}</a>
+          <button class="x del-up" data-name="${esc(u.name)}" data-school="${esc(r.name)}"
+                  data-at="${esc(u.at)}" title="この提出物を消す">×</button></span>`).join(" ")}</td>
       </tr>`;
     }).join("");
+
+  $$("#up-table .del-up").forEach((b) => (b.onclick = async () => {
+    const d = b.dataset;
+    if (!confirm(`${d.school} が ${d.at} に提出したものを消します。\n\n`
+               + "元に戻せません。よろしいですか？")) return;
+    const body = await api("admin_delete_upload", { name: d.name });
+    if (showErrors("#up-errors", body.ok ? {} : body)) return;
+    await load();
+    switchTab("uploads");
+  }));
+}
+
+/* 年度（4月始まり）×大会でまとめて消す。大会IDは毎年おなじなので年度で分ける */
+function nowNendo() {
+  const d = new Date();
+  return d.getMonth() + 1 >= 4 ? d.getFullYear() : d.getFullYear() - 1;
+}
+
+function renderUploadGroups() {
+  const gs = A.upload_groups || [];
+  const tname = (tid) => (A.tournaments[tid] || {}).name || tid;
+  // 大会IDは毎年おなじなので、「受付中」は今年度の行にだけ付ける
+  // （去年の新人戦まで受付中に見えると、消してよいか判断できない）
+  const isActive = (g) => g.tid === A.active && g.nendo === nowNendo();
+  $("#grp-table tbody").innerHTML = gs.length ? gs.map((g) => `
+    <tr data-nendo="${g.nendo}" data-tid="${esc(g.tid)}" data-count="${g.count}"
+        data-label="${esc(g.nendo)}年度 ${esc(tname(g.tid))}">
+      <td class="num">${g.nendo}年度</td>
+      <td>${esc(tname(g.tid))}${isActive(g) ? ' <span class="tag on">受付中</span>' : ""}</td>
+      <td class="c">${g.schools}</td>
+      <td class="c">${g.count}</td>
+      <td class="c num">${esc(g.size_text)}</td>
+      <td class="num">${esc(g.last_at)}</td>
+      <td><button class="btn del-grp">まとめて消す</button></td>
+    </tr>`).join("")
+    : '<tr><td colspan="7" class="zero">提出物はまだありません</td></tr>';
+
+  $$("#grp-table .del-grp").forEach((b) => (b.onclick = async () => {
+    const tr = b.closest("tr");
+    const d = tr.dataset;
+    const active = (d.tid === A.active && Number(d.nendo) === nowNendo())
+      ? "\n\n★これは今まさに受付中の大会です。本当に消してよいか確かめてください。" : "";
+    if (!confirm(`${d.label} の提出物 ${d.count}件 をまとめて消します。`
+               + `\n（${tr.cells[2].textContent}校分・${tr.cells[4].textContent}）`
+               + `${active}\n\n元に戻せません。よろしいですか？`)) return;
+    const body = await api("admin_delete_group",
+      { nendo: Number(d.nendo), tid: d.tid, expect_count: Number(d.count) });
+    if (showErrors("#grp-errors", body.ok ? {} : body)) return;
+    await load();
+    switchTab("uploads");
+    flash("#grp-msg", `${d.label} の ${body.deleted}件 を消しました`);
+  }));
 }
 
 function renderSettings() {

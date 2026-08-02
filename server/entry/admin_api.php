@@ -176,6 +176,7 @@ try {
                   'year'        => (string)config_get('year', ''),
                   'weak_password' => admin_password_is_weak(),
                   'status'      => collect_status($t),
+                  'upload_groups' => upload_groups(),
                   'tournament'  => $t]);
         }
 
@@ -659,6 +660,52 @@ try {
             readfile($tmp);
             unlink($tmp);
             exit;
+        }
+
+        // ---- 提出物を1件消す（間違って上げたものの後始末） ----
+        case 'admin_delete_upload': {
+            require_admin();
+            $name = (string)($in['name'] ?? '');
+            $u = upload_parse($name);
+            if (!$u || !upload_path($name)) {
+                afail('その提出物はありません', 404);
+            }
+            $s = school_by_id($u['school_id']);
+            if (!upload_delete($name)) {
+                afail('消せませんでした');
+            }
+            upload_log_deleted([$name], '1件削除');
+            aout(['ok' => true, 'school' => (string)($s['base_name'] ?? $u['school_id']),
+                  'at' => $u['at']]);
+        }
+
+        // ---- 年度×大会のぶんをまとめて消す（たまったものの整理） ----
+        case 'admin_delete_group': {
+            require_admin();
+            $nendo = (int)($in['nendo'] ?? 0);
+            $tid   = (string)($in['tid'] ?? '');
+            $expect = (int)($in['expect_count'] ?? -1);
+            if ($nendo < 2000 || $tid === '') {
+                afail('消す対象が指定されていません');
+            }
+            // 画面に出ていた件数と今の件数が違えば止める（表示のあとに増えたぶんを
+            // 巻き添えで消さないため。もう一度開いて確かめてもらう）
+            $now = 0;
+            foreach (upload_scan($tid) as $u) {
+                if (upload_nendo($u['ts']) === $nendo) {
+                    $now++;
+                }
+            }
+            if ($now === 0) {
+                afail('その年度・大会の提出物はもうありません');
+            }
+            if ($expect >= 0 && $expect !== $now) {
+                afail("画面を開いたあとに件数が変わりました（{$expect}件 → {$now}件）。"
+                    . '画面を読み込み直してから、もう一度確かめてください');
+            }
+            $done = upload_delete_group($nendo, $tid);
+            upload_log_deleted($done, "{$nendo}年度 {$tid} をまとめて削除");
+            aout(['ok' => true, 'deleted' => count($done)]);
         }
 
         default:

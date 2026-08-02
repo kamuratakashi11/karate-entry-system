@@ -150,6 +150,71 @@ function upload_by_school(?string $tid = null): array
     return $out;
 }
 
+/**
+ * 提出年度（4月始まり）。"20260801_141500" → 2026、"20270210_..." → 2026。
+ * 大会ID（shinjin など）は毎年おなじなので、年度で分けないと去年のぶんを整理できない。
+ */
+function upload_nendo(string $ts): int
+{
+    $y = (int)substr($ts, 0, 4);
+    return (int)substr($ts, 4, 2) >= 4 ? $y : $y - 1;
+}
+
+/** 年度×大会でまとめる（整理用）。新しいものが先 */
+function upload_groups(): array
+{
+    $g = [];
+    foreach (upload_scan() as $u) {
+        $nendo = upload_nendo($u['ts']);
+        $k = "{$nendo}|{$u['tid']}";
+        if (!isset($g[$k])) {
+            $g[$k] = ['nendo' => $nendo, 'tid' => $u['tid'], 'count' => 0,
+                      'bytes' => 0, 'schools' => [], 'first' => $u['ts'], 'last' => $u['ts']];
+        }
+        $g[$k]['count']++;
+        $g[$k]['bytes'] += $u['size'];
+        $g[$k]['schools'][$u['school_id']] = true;
+        $g[$k]['first'] = min($g[$k]['first'], $u['ts']);
+        $g[$k]['last']  = max($g[$k]['last'], $u['ts']);
+    }
+    $out = [];
+    foreach ($g as $v) {
+        $v['schools']   = count($v['schools']);
+        $v['size_text'] = upload_size_text($v['bytes']);
+        $v['first_at']  = upload_at_text($v['first']);
+        $v['last_at']   = upload_at_text($v['last']);
+        $out[] = $v;
+    }
+    usort($out, fn($a, $b) => [$b['nendo'], $b['last']] <=> [$a['nendo'], $a['last']]);
+    return $out;
+}
+
+/** 消したものを控える（www の外・追記のみ）。「去年のぶんはどこへ？」に答えられるように */
+function upload_log_deleted(array $names, string $why): void
+{
+    $line = date('Y-m-d H:i') . "\t{$why}\t" . count($names) . "件\t" . implode(' ', $names) . "\n";
+    @file_put_contents(dirname(ENTRY_UPLOAD_DIR) . '/uploads_deleted.log', $line, FILE_APPEND);
+}
+
+/** 1件消す。名前がうちの流儀でなければ何もしない（経路を作らせない） */
+function upload_delete(string $name): bool
+{
+    $path = upload_path($name);
+    return $path !== null && @unlink($path);
+}
+
+/** 年度×大会のぶんをまとめて消す。消した名前を返す */
+function upload_delete_group(int $nendo, string $tid): array
+{
+    $done = [];
+    foreach (upload_scan($tid) as $u) {
+        if (upload_nendo($u['ts']) === $nendo && upload_delete($u['name'])) {
+            $done[] = $u['name'];
+        }
+    }
+    return $done;
+}
+
 /** 保存名 → 実体の場所。名前がうちの流儀で無ければ null（経路を作らせない） */
 function upload_path(string $name): ?string
 {
