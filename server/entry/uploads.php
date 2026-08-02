@@ -20,8 +20,20 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 
-/** 受け付ける拡張子（従来の申込システムと同じ4種） */
+/**
+ * 一覧・取り出し・削除で「うちの提出物」と認めるもの。
+ * **新しく受け取るのは PDF だけ**（下の UPLOAD_ACCEPT_EXTS）だが、ここを狭めると
+ * 以前に受け取った写真が一覧から消えて取り出せなくなるので、旧形式も残す。
+ */
 const UPLOAD_EXTS = ['pdf', 'jpg', 'jpeg', 'png'];
+
+/**
+ * 新しく受け取る拡張子。**PDF だけ**（2026-08-02 決定・孝さん）。
+ * 申込書は22名を超えると2ページになる。写真だと2枚バラバラの提出になり、
+ * 「いちばん新しいものが提出物」の決まりと噛み合わず1ページ目が抜ける。
+ * PDFなら複数ページが1つにまとまり、iPhone の HEIC 変換にも頼らずに済む。
+ */
+const UPLOAD_ACCEPT_EXTS = ['pdf'];
 
 /** 1ファイルの上限。php.ini の上限がこれより小さければそちらが効く */
 const UPLOAD_CAP_BYTES = 20 * 1024 * 1024;
@@ -255,9 +267,13 @@ function upload_store(string $tid, string $sid, array $f): array
     }
 
     $ext = strtolower((string)pathinfo((string)($f['name'] ?? ''), PATHINFO_EXTENSION));
-    if (!in_array($ext, UPLOAD_EXTS, true)) {
-        return ['ok' => false, 'error' => 'PDF・JPG・PNG のいずれかにしてください（選ばれたもの: '
-            . ($ext === '' ? '拡張子なし' : ".{$ext}") . '）'];
+    if (!in_array($ext, UPLOAD_ACCEPT_EXTS, true)) {
+        return ['ok' => false, 'error' =>
+            '申込書は PDF で提出してください（選ばれたもの: '
+            . ($ext === '' ? '拡張子なし' : ".{$ext}") . '）。'
+            . 'スマホで撮る場合は、写真ではなく「書類をスキャン」でPDFにしてください'
+            . '（画面の「スマートフォンでPDFにするには」をご覧ください）。'
+            . 'どうしてもPDFにできない場合は、専門部までメールでお送りください'];
     }
     $size = (int)($f['size'] ?? 0);
     if ($size <= 0) {

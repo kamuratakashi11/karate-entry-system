@@ -131,6 +131,11 @@ td.del { width:2em; text-align:center; }
 .uprow input[type=file] { font:inherit; font-size:12.5px; color:var(--ink-2);
   width:auto; max-width:100%; flex:1 1 18em; }
 .uprow .btn:disabled { opacity:.5; cursor:default; }
+.howto { margin-top:10px; font-size:12.5px; color:var(--ink-2);
+  border:1px solid var(--line-soft); border-radius:var(--radius); background:var(--surface-2); }
+.howto summary { cursor:pointer; padding:6px 10px; color:var(--accent); font-weight:600; }
+.howto p { margin:0 10px 8px; }
+.howto[open] summary { border-bottom:1px solid var(--line-soft); margin-bottom:8px; }
 .uplist td { font-size:12.5px; }
 .uplist a { color:var(--accent); }
 .badge { font-size:10.5px; padding:0 7px; border-radius:999px;

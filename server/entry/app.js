@@ -513,11 +513,30 @@ function renderUploads() {
     </tr>`).join("");
 }
 
+/* 申込書は PDF だけ受け付ける（22名を超えると2ページになるため。写真だと2枚
+   バラバラの提出になり、「いちばん新しいものが提出物」の決まりと噛み合わない）。
+   サーバーでも同じ判定をするが、選んだ時点で知らせたほうが親切なのでここでも見る。 */
+function isPdf(f) {
+  return /\.pdf$/i.test(f.name);
+}
+
+function notPdfMessage(f) {
+  const ext = (f.name.split(".").pop() || "").toLowerCase();
+  return `申込書は PDF で提出してください（選ばれたもの: ${ext ? "." + ext : "拡張子なし"}）。`
+    + "写真ではなく「書類をスキャン」でPDFにしてください"
+    + "（上の「スマートフォンでPDFにするには」をご覧ください）。"
+    + "どうしてもPDFにできない場合は、専門部までメールでお送りください";
+}
+
 async function uploadForm() {
   const input = $("#up-file");
   const f = input.files && input.files[0];
   if (!f) return;
   showErrors("#up-errors", {});
+  if (!isPdf(f)) {
+    showErrors("#up-errors", { error: notPdfMessage(f) });
+    return;
+  }
   if (S.upload_limit_bytes && f.size > S.upload_limit_bytes) {
     showErrors("#up-errors", { error: `ファイルが大きすぎます（上限 ${S.upload_limit}）` });
     return;
@@ -618,8 +637,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("#tab-entry").addEventListener("input", () => setDirty(true));
 
   $("#up-file").onchange = () => {
-    $("#up-send").disabled = !$("#up-file").files.length;
     showErrors("#up-errors", {});
+    const f = $("#up-file").files[0];
+    // 押す前に知らせる（提出してから断られるより分かりやすい）
+    $("#up-send").disabled = !f || !isPdf(f);
+    if (f && !isPdf(f)) showErrors("#up-errors", { error: notPdfMessage(f) });
   };
   $("#up-send").onclick = () => uploadForm().catch((e) => showErrors("#up-errors", { error: e.message }));
 

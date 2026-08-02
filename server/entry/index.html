@@ -210,15 +210,24 @@
         <span class="aux" id="up-limit"></span></div>
       <div class="pane" style="margin-top:12px">
         <p style="margin:4px 0 10px">ダウンロードした申込書を印刷し、<b>校長印を押したもの</b>を
-          PDFか写真（スマートフォンで撮ったものでも構いません）にして、ここへ提出してください。</p>
+          <b>PDF</b> にして、ここへ提出してください。</p>
         <div class="uprow">
-          <input type="file" id="up-file"
-                 accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
+          <input type="file" id="up-file" accept=".pdf,application/pdf">
           <button class="btn primary" id="up-send" disabled>提出する</button>
           <span id="up-msg" class="okmsg"></span>
         </div>
-        <p class="hint">PDF・JPG・PNG に対応しています。あとから何度でも出し直せます
-          （いちばん新しいものを提出物として扱います）。</p>
+        <details class="howto">
+          <summary>スマートフォンでPDFにするには</summary>
+          <p><b>iPhone</b> …「メモ」アプリで新しいメモを作る → カメラのマーク →
+            <b>「書類をスキャン」</b> → ページを続けて撮る → 保存 → 共有 → 「ファイルに保存」</p>
+          <p><b>Android</b> … Google ドライブアプリの <b>＋</b> → <b>「スキャン」</b> →
+            ページを続けて撮る → 保存</p>
+          <p>学校の複合機でスキャンしたPDFでも構いません。
+            <b>どうしてもPDFにできない場合は、専門部までメールでお送りください。</b></p>
+        </details>
+        <p class="hint"><b>申込書が2ページになる場合は、1つのPDFにまとめてください</b>
+          （エントリーが22名を超えると2ページになります）。写真（JPG・PNG）は受け付けません。
+          あとから何度でも出し直せます（いちばん新しいものを提出物として扱います）。</p>
       </div>
       <div id="up-errors" class="errbox hidden"></div>
 
