@@ -5,3 +5,4 @@ gspread
 oauth2client
 google-api-python-client
 requests
+starlette<1.4.0
