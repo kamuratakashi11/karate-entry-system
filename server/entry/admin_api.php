@@ -229,7 +229,21 @@ try {
         case 'export': {
             require_admin();
             $kind = (string)($_GET['kind'] ?? '');
-            $t = active_tournament();
+            // どの大会を出すかは tid で選べる（無ければ従来どおり受付中の大会）。
+            // 受付中の大会を切り替えずに、終わった大会の組合せを作り直せるように
+            // するため。切り替えてしまうと、その間ほかの大会の受付が止まる。
+            // 出力は $t だけで決まる（collect_status($t) と entries の
+            // tournament_id）ので、ここを差し替えるだけでよい。
+            $tid = trim((string)($_GET['tid'] ?? ''));
+            if ($tid !== '') {
+                $ts = (array)config_get('tournaments', []);
+                if (!isset($ts[$tid])) {
+                    afail('その大会がありません: ' . $tid, 404);
+                }
+                $t = ['id' => $tid] + (array)$ts[$tid];
+            } else {
+                $t = active_tournament();
+            }
             if (!$t) {
                 afail('受付中の大会がありません');
             }
