@@ -388,6 +388,31 @@ try {
                 fail_list(array_values(array_unique($errors)));
             }
 
+            // 正の順位が 1 から連番か。**保存は止めない（警告だけ）**。
+            //   - シードは対象外。シードの「順位」は学校内の優先順位ではなく**大会の
+            //     シード順位**なので、1人でも「3」があり得る（app.py の案内文と同じ）
+            //   - 補も対象外（順位を持たない）
+            //   - 抽選側は順位を読まず**人数**で番手を決める（from_entry.py は rank を
+            //     参照しない／rules_check.effective_rank は 1人校の番手を無効にする）＝
+            //     ここが連番でなくてもデータは壊れない。だからエラーにはしない。
+            //     拾いたいのは「1人しか出さないのに順位2」のような**入力の取り違え**
+            $warnings = [];
+            foreach ($rankMap as $key => $ranks) {
+                [$label, $v] = explode('|', $key);
+                if ($v !== '正') {
+                    continue;
+                }
+                // 重複はこの時点で無い（上で弾いてある）ので、件数＝人数
+                $got  = array_map('strval', array_keys($ranks));
+                $want = array_map('strval', range(1, count($got)));
+                if (array_diff($want, $got)) {
+                    sort($got, SORT_NATURAL);
+                    $warnings[] = "{$label}: 正の順位が1から連番になっていません"
+                        . '（いまは ' . implode('・', $got) . '／' . count($got) . '名）。'
+                        . '保存はしましたが、入力の間違いがないか確認してください';
+                }
+            }
+
             // メタ（Streamlit に切り戻しても画面が読めるよう part_* も立てておく）
             $meta = entries_of($tid, (string)$s['school_id'])['meta'];
             $meta['m_kumite_mode'] = $mMode;
@@ -424,7 +449,8 @@ try {
             }
             $st->execute([$tid, '_meta_' . $s['school_id'], json_encode($meta, JSON_UNESCAPED_UNICODE)]);
             $pdo->commit();
-            out(['ok' => true]);
+            out($warnings ? ['ok' => true, 'warnings' => array_values(array_unique($warnings))]
+                          : ['ok' => true]);
         }
 
         // ---- 申込書のダウンロード（④のエンジンで型埋め） ----

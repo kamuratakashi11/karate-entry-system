@@ -67,6 +67,29 @@ section.blk { margin-top:26px; }
 .duo { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px; }
 @media (max-width:760px){ .duo { grid-template-columns:1fr; } }
 
+/* ---- スマホ: 部員名簿の1行を折り返す ----
+   名簿は7列あり、氏名以外の5列に固定幅を与えている
+   （No.4em＋性別6em＋学年5em＋生年月日9em＋JKF8em＝32em以上）。
+   375px ではこれが入りきらず、幅指定の無い**氏名の列が潰れて名前が読めない**
+   （2026-08-13 実機で判明）。横スクロールにすると入力しづらいので折り返す。
+   見出し行は消えるため、各入力には placeholder で名前を出している（app.js）。 */
+@media (max-width:560px){
+  #mem-table, #mem-table tbody { display:block; }
+  #mem-table thead { display:none; }
+  #mem-table tbody tr { display:flex; flex-wrap:wrap; gap:5px 6px;
+    padding:9px 0; border-bottom:1px solid var(--line-soft); }
+  #mem-table tbody tr:last-child { border-bottom:none; }
+  #mem-table td { border:none; padding:0; width:auto; }
+  /* 1段目に No./氏名/× を出す。× は最後の列なので order で引き上げる */
+  #mem-table td:nth-child(1) { order:1; flex:0 0 4.4em; }   /* No.      */
+  #mem-table td:nth-child(2) { order:2; flex:1 1 8em;   }   /* 氏名     */
+  #mem-table td:nth-child(7) { order:3; flex:0 0 2em;   }   /* ×        */
+  #mem-table td:nth-child(3) { order:4; flex:1 1 5.5em; }   /* 性別     */
+  #mem-table td:nth-child(4) { order:5; flex:1 1 4.5em; }   /* 学年     */
+  #mem-table td:nth-child(5) { order:6; flex:1 1 9em;   }   /* 生年月日 */
+  #mem-table td:nth-child(6) { order:7; flex:1 1 8em;   }   /* JKF番号  */
+}
+
 .pane { background:var(--surface); border:1px solid var(--line-soft);
         border-radius:var(--radius); padding:10px 12px 12px; }
 .pane h3 { margin:0 0 8px; font-size:13px; font-weight:600; color:var(--ink-2);
@@ -124,7 +147,8 @@ td.del { width:2em; text-align:center; }
   border-radius:var(--radius); padding:8px 12px; margin:10px 0; white-space:pre-line; font-size:13px; }
 .okmsg { color:var(--ok); font-weight:600; font-size:13px; }
 .notice { background:var(--warn-bg); border-left:3px solid var(--warn); color:var(--ink-2);
-  border-radius:var(--radius); padding:6px 12px; margin:12px 0 0; font-size:13px; }
+  border-radius:var(--radius); padding:6px 12px; margin:12px 0 0; font-size:13px;
+  white-space:pre-line; }   /* 警告を複数行で出すため（既存の1行の注記には影響しない） */
 
 /* ---- 申込書の提出 ---- */
 .uprow { display:flex; align-items:center; gap:10px 12px; flex-wrap:wrap; }
@@ -136,6 +160,10 @@ td.del { width:2em; text-align:center; }
 .howto summary { cursor:pointer; padding:6px 10px; color:var(--accent); font-weight:600; }
 .howto p { margin:0 10px 8px; }
 .howto[open] summary { border-bottom:1px solid var(--line-soft); margin-bottom:8px; }
+/* 2ページの説明は大半の学校に関係ないので、基本手順と線で切り分ける
+   （22名以下＝1ページの学校が「2枚撮る」と読み違えないため。孝さん・2026-08-13） */
+.howto p.howto-warn { margin-top:11px; padding-top:9px;
+  border-top:1px solid var(--line-soft); color:var(--warn); }
 .uplist td { font-size:12.5px; }
 .uplist a { color:var(--accent); }
 .badge { font-size:10.5px; padding:0 7px; border-radius:999px;

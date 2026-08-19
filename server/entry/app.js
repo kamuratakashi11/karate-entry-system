@@ -39,6 +39,18 @@ function showErrors(boxSel, body) {
   return msgs.length > 0;
 }
 
+/* 保存は通ったが確認してほしいこと。errbox と違い**赤くせず・戻り値も見ない**
+   （止めるものではないため）。サーバーが warnings を返さなければ黙って消える。 */
+function showNotice(boxSel, msgs) {
+  const box = $(boxSel);
+  if (msgs && msgs.length) {
+    box.textContent = msgs.map((m) => "・" + m).join("\n");
+    box.classList.remove("hidden");
+  } else {
+    box.classList.add("hidden");
+  }
+}
+
 function flash(sel, text) {
   const el = $(sel);
   el.textContent = text;
@@ -173,8 +185,8 @@ async function saveAdvisors() {
 function memberRow(m = {}) {
   const tr = document.createElement("tr");
   tr.innerHTML = `
-    <td><input type="text" class="m-no num" value="${esc(m.display_order)}"></td>
-    <td><input type="text" class="m-name" value="${esc(m.name)}"></td>
+    <td><input type="text" class="m-no num" placeholder="No." value="${esc(m.display_order)}"></td>
+    <td><input type="text" class="m-name" placeholder="氏名" value="${esc(m.name)}"></td>
     <td><select class="m-sex">
       <option value="">—</option>
       <option ${m.sex === "男子" ? "selected" : ""}>男子</option>
@@ -184,7 +196,7 @@ function memberRow(m = {}) {
       ${[1, 2, 3].map((g) => `<option ${String(m.grade) === String(g) ? "selected" : ""}>${g}</option>`).join("")}
     </select></td>
     <td><input type="text" class="m-dob num" placeholder="2010/04/01" value="${esc(m.dob)}"></td>
-    <td><input type="text" class="m-jkf num" value="${esc(m.jkf_no)}"></td>
+    <td><input type="text" class="m-jkf num" placeholder="JKF番号" value="${esc(m.jkf_no)}"></td>
     <td class="del"><button class="x" title="この行を外す">×</button></td>`;
   tr.querySelector(".x").onclick = () => tr.remove();
   return tr;
@@ -484,6 +496,9 @@ async function saveEntry() {
     },
   };
   const body = await api("save_entry", payload);
+  // エラーで戻るときも通る位置に置く（warnings が無ければ前回の警告が消える）。
+  // #entry-warn は #entry-body の中だが loadState は class を切り替えるだけなので消えない
+  showNotice("#entry-warn", body.warnings);
   if (showErrors("#entry-errors", body.ok ? {} : body)) return;
   await loadState();
   switchTab("entry");
