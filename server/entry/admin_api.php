@@ -10,6 +10,22 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/uploads.php';
 
+// 「人数制限」の画面から書き換えてよい項目。ここに無いものは受け取っても捨てる。
+// 個人種目は正と補欠が別のキーに分かれている（もとのデータの形に合わせてある）。
+const LIMIT_FIELDS = [
+    'team_kata'     => ['max', 'sub_max'],
+    'team_kumite_5' => ['min', 'max', 'sub_max'],
+    'team_kumite_3' => ['min', 'max', 'sub_max'],
+    'ind_kata_reg'  => ['max'], 'ind_kata_sub' => ['max'],
+    'ind_kumi_reg'  => ['max'], 'ind_kumi_sub' => ['max'],
+];
+const LIMIT_LABELS = [
+    'team_kata'     => '団体形',            'team_kumite_5' => '団体組手（5人制）',
+    'team_kumite_3' => '団体組手（3人制）', 'ind_kata_reg'  => '個人形',
+    'ind_kata_sub'  => '個人形の補欠',      'ind_kumi_reg'  => '個人組手',
+    'ind_kumi_sub'  => '個人組手の補欠',
+];
+
 function aout(array $data, int $code = 200): never
 {
     http_response_code($code);
@@ -174,6 +190,7 @@ try {
                   'tournaments' => (array)config_get('tournaments', []),
                   'active'      => $t['id'] ?? null,
                   'year'        => (string)config_get('year', ''),
+                  'limits_base' => (array)config_get('limits', default_limits()) + default_limits(),
                   'weak_password' => admin_password_is_weak(),
                   'status'      => collect_status($t),
                   'upload_groups' => upload_groups(),
@@ -197,6 +214,56 @@ try {
             if ($tid !== '') {
                 $ts[$tid]['deadline'] = $deadline;
             }
+            db()->prepare('INSERT OR REPLACE INTO config VALUES (?,?)')
+                ->execute(['tournaments', json_encode($ts, JSON_UNESCAPED_UNICODE)]);
+            aout(['ok' => true]);
+        }
+
+        // ---- 人数制限（大会ごと）----
+        // 大会によって規定が違うので、全体の設定ではなく**その大会**に書く。
+        // 書いた項目だけが上書きになる（db.php の limits_for）。
+        case 'admin_set_limits': {
+            require_admin();
+            $tid = (string)($in['tournament_id'] ?? '');
+            $ts  = (array)config_get('tournaments', []);
+            if (!isset($ts[$tid])) {
+                afail('その大会がありません');
+            }
+            $sent = (array)($in['limits'] ?? []);
+            $clean = [];
+            $errors = [];
+            foreach (LIMIT_FIELDS as $key => $fields) {
+                if (!isset($sent[$key]) || !is_array($sent[$key])) {
+                    continue;
+                }
+                $name = LIMIT_LABELS[$key];
+                foreach ($fields as $f) {
+                    if (!array_key_exists($f, $sent[$key])) {
+                        continue;
+                    }
+                    $raw = trim(mb_convert_kana((string)$sent[$key][$f], 'n'));
+                    if (!preg_match('/^\d{1,2}$/', $raw) || (int)$raw > 20) {
+                        $errors[] = "{$name}: 人数は 0〜20 の数で入れてください";
+                        continue;
+                    }
+                    $v = (int)$raw;
+                    // 補欠は0名でよい（置かない大会がある）。正は1名以上。
+                    $isSub = ($f === 'sub_max') || str_ends_with($key, '_sub');
+                    if (!$isSub && $v < 1) {
+                        $errors[] = "{$name}: 正の人数は1名以上にしてください";
+                        continue;
+                    }
+                    $clean[$key][$f] = $v;
+                }
+                if (isset($clean[$key]['min'], $clean[$key]['max'])
+                        && $clean[$key]['min'] > $clean[$key]['max']) {
+                    $errors[] = "{$name}: 正の「最少」が「最多」より多くなっています";
+                }
+            }
+            if ($errors) {
+                aout(['ok' => false, 'errors' => array_values(array_unique($errors))], 422);
+            }
+            $ts[$tid]['limits'] = $clean;
             db()->prepare('INSERT OR REPLACE INTO config VALUES (?,?)')
                 ->execute(['tournaments', json_encode($ts, JSON_UNESCAPED_UNICODE)]);
             aout(['ok' => true]);

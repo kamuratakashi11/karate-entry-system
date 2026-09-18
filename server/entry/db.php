@@ -45,6 +45,45 @@ function active_tournament(): ?array
     return null;
 }
 
+/**
+ * 人数制限の既定（config にも大会にも無いときの予備）。
+ *
+ * **定数ではなく関数**にしてある。定数だと、上げ直しの途中で db.php だけが新しく
+ * なった一瞬に、古い api.php の同名の定数と衝突して画面全体が落ちるため
+ * （2026-09-18。db.php を先に上げれば、この形なら途中でも壊れない）。
+ */
+function default_limits(): array
+{
+    return [
+        'team_kata'     => ['min' => 3, 'max' => 3, 'sub_max' => 1],
+        'team_kumite_5' => ['min' => 3, 'max' => 5, 'sub_max' => 2],
+        'team_kumite_3' => ['min' => 2, 'max' => 3, 'sub_max' => 1],
+        'ind_kata_reg'  => ['max' => 4], 'ind_kata_sub' => ['max' => 2],
+        'ind_kumi_reg'  => ['max' => 4], 'ind_kumi_sub' => ['max' => 2],
+    ];
+}
+
+/**
+ * この大会の人数制限。**大会ごとの設定 → 全体の設定 → 既定** の順に優先する。
+ *
+ * 大会によって規定が違う（新人大会の団体組手5人制は補欠3名。2026-09-18 孝さん）。
+ * 全体の設定を大会ごとに書き換えずに済むよう、**項目単位で上書き**する
+ * （大会側に「補欠」しか書いていなければ、正の人数は全体の設定のまま）。
+ * 書くのは管理者ページの「大会設定 → 人数制限」＝ tournaments[大会]['limits']。
+ */
+function limits_for(?array $t): array
+{
+    $limits = (array)config_get('limits', default_limits()) + default_limits();
+    foreach ((array)($t['limits'] ?? []) as $key => $own) {
+        if (!is_array($own)) {
+            continue;
+        }
+        $limits[$key] = isset($limits[$key]) && is_array($limits[$key])
+            ? $own + $limits[$key] : $own;
+    }
+    return $limits;
+}
+
 function school_by_id(string $sid): ?array
 {
     $st = db()->prepare('SELECT * FROM schools WHERE school_id = ?');

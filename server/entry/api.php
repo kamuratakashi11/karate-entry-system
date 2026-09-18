@@ -12,14 +12,7 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/uploads.php';
 
-// 既定の人数制限（config に無い場合の予備。app.py の DEFAULT_LIMITS と同値）
-const DEFAULT_LIMITS = [
-    'team_kata'     => ['min' => 3, 'max' => 3, 'sub_max' => 1],
-    'team_kumite_5' => ['min' => 3, 'max' => 5, 'sub_max' => 2],
-    'team_kumite_3' => ['min' => 2, 'max' => 3, 'sub_max' => 1],
-    'ind_kata_reg'  => ['max' => 4], 'ind_kata_sub' => ['max' => 2],
-    'ind_kumi_reg'  => ['max' => 4], 'ind_kumi_sub' => ['max' => 2],
-];
+// 人数制限の既定と決め方（default_limits・limits_for）は db.php にある
 
 function out(array $data, int $code = 200): never
 {
@@ -119,7 +112,7 @@ try {
                  ],
                  'members'    => members_of((string)$s['school_id']),
                  'tournament' => $t,
-                 'limits'     => (array)config_get('limits', DEFAULT_LIMITS),
+                 'limits'     => limits_for($t),
                  'year'       => (string)config_get('year', ''),
                  'entries'    => $ent['by_name'],
                  'meta'       => $ent['meta'],
@@ -208,7 +201,7 @@ try {
             }
             $tid = $t['id'];
             $grades = array_map('intval', (array)($t['grades'] ?? [1, 2, 3]));
-            $limits = (array)config_get('limits', DEFAULT_LIMITS) + DEFAULT_LIMITS;
+            $limits = limits_for($t);
 
             // 名簿（$byName は出場できる学年だけ。$allNames は学年違いの説明用）
             $byName = [];

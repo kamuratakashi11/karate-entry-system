@@ -204,6 +204,30 @@
       <div id="set-errors" class="errbox hidden"></div>
     </section>
     <section class="blk">
+      <div class="blk-head"><h2>人数制限</h2>
+        <span class="aux">大会ごとに決められます</span></div>
+      <div class="pane" style="margin-top:12px">
+        <div class="rowform">
+          <select id="lim-tid" style="min-width:22em"></select>
+        </div>
+        <div class="tblwrap" style="margin-top:10px">
+          <table class="st" id="lim-table">
+            <thead><tr><th>種目</th><th class="c">正（最少）</th><th class="c">正（最多）</th><th class="c">補欠</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="rowform" style="margin-top:10px">
+          <button class="btn primary" id="lim-save">保存</button>
+          <span id="lim-msg" class="okmsg"></span>
+        </div>
+        <p class="hint">保存すると、先生方のエントリー画面の「正」「補」の欄がこの数だけ出ます。
+          「最少」は団体組手だけで使い、先生方の画面に「正3〜5名」のように出ます。
+          <b>すでに保存されている内容は消えません。</b>ただし数を<b>減らした</b>場合、
+          はみ出した選手は画面から見えなくなり、その学校が次に保存したときに外れます。</p>
+      </div>
+      <div id="lim-errors" class="errbox hidden"></div>
+    </section>
+    <section class="blk">
       <div class="blk-head"><h2>管理者パスワード</h2></div>
       <div class="pane" style="margin-top:12px">
         <div class="rowform">
@@ -279,7 +303,7 @@ async function load() {
     ? `令和${A.year}年度 ${A.tournament.name}` : "受付中の大会なし";
   $("#weak").classList.toggle("hidden", !A.weak_password);
   renderDue(); renderSummary(); renderStatus(); renderUploads(); renderUploadGroups();
-  renderSettings(); renderAccounts();
+  renderSettings(); renderLimits(); renderAccounts();
 }
 
 function renderDue() {
@@ -431,6 +455,48 @@ function renderSettings() {
   $("#set-deadline").value = (A.tournament && A.tournament.deadline) || "";
 }
 
+// 人数制限の表。どの設定を触るかは種目ごとに違う（もとのデータの形に合わせてある）。
+// 個人種目は「正」と「補欠」が別のキーに分かれていて、最少人数は使っていない。
+const LIM_ROWS = [
+  { label: "団体形",            min: null,                     reg: ["team_kata", "max"],     sub: ["team_kata", "sub_max"] },
+  { label: "団体組手（5人制）", min: ["team_kumite_5", "min"], reg: ["team_kumite_5", "max"], sub: ["team_kumite_5", "sub_max"] },
+  { label: "団体組手（3人制）", min: ["team_kumite_3", "min"], reg: ["team_kumite_3", "max"], sub: ["team_kumite_3", "sub_max"] },
+  { label: "個人形",            min: null,                     reg: ["ind_kata_reg", "max"],  sub: ["ind_kata_sub", "max"] },
+  { label: "個人組手",          min: null,                     reg: ["ind_kumi_reg", "max"],  sub: ["ind_kumi_sub", "max"] },
+];
+
+// 実際に使われる値＝全体の設定に、その大会の設定を項目ごとに重ねたもの（db.php の limits_for と同じ）
+function limitsOf(tid) {
+  const base = A.limits_base || {};
+  const own = ((A.tournaments || {})[tid] || {}).limits || {};
+  const out = {};
+  Object.keys(base).forEach((k) => { out[k] = Object.assign({}, base[k], own[k] || {}); });
+  Object.keys(own).forEach((k) => { if (!out[k]) out[k] = Object.assign({}, own[k]); });
+  return out;
+}
+
+function renderLimits() {
+  const sel = $("#lim-tid");
+  const keep = sel.value;
+  sel.innerHTML = Object.entries(A.tournaments).map(([tid, t]) =>
+    `<option value="${esc(tid)}" ${tid === A.active ? "selected" : ""}>${esc(t.name)}</option>`).join("");
+  if (keep && A.tournaments[keep]) sel.value = keep;   // 保存後も見ていた大会のまま
+  renderLimitRows();
+}
+
+function renderLimitRows() {
+  const lim = limitsOf($("#lim-tid").value);
+  const cell = (spec) => {
+    if (!spec) return "—";
+    const v = (lim[spec[0]] || {})[spec[1]];
+    return `<input type="number" class="lim num" min="0" max="20" size="3"
+      data-key="${esc(spec[0])}" data-fld="${esc(spec[1])}" value="${esc(v === undefined ? "" : v)}">`;
+  };
+  $("#lim-table tbody").innerHTML = LIM_ROWS.map((r) =>
+    `<tr><th>${esc(r.label)}</th><td class="c">${cell(r.min)}</td>` +
+    `<td class="c">${cell(r.reg)}</td><td class="c">${cell(r.sub)}</td></tr>`).join("");
+}
+
 function renderAccounts() {
   $("#acc-table tbody").innerHTML = A.status.map((r) => `
     <tr data-sid="${esc(r.school_id)}">
@@ -477,6 +543,17 @@ window.addEventListener("DOMContentLoaded", async () => {
       { tournament_id: $("#set-tid").value, deadline: $("#set-deadline").value });
     if (showErrors("#set-errors", b.ok ? {} : b)) return;
     flash("#set-msg", "保存しました"); await load();
+  };
+  $("#lim-tid").onchange = renderLimitRows;
+  $("#lim-save").onclick = async () => {
+    const limits = {};
+    $$("#lim-table input.lim").forEach((i) => {
+      if (!limits[i.dataset.key]) limits[i.dataset.key] = {};
+      limits[i.dataset.key][i.dataset.fld] = i.value;
+    });
+    const b = await api("admin_set_limits", { tournament_id: $("#lim-tid").value, limits });
+    if (showErrors("#lim-errors", b.ok ? {} : b)) return;
+    flash("#lim-msg", "保存しました"); await load();
   };
   $("#adm-save").onclick = async () => {
     const b = await api("admin_set_password", { password: $("#adm-pw").value });
