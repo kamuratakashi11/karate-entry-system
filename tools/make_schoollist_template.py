@@ -55,6 +55,18 @@ def main() -> None:
                 cleared += 1
     ws[TITLE_CELL] = None              # 大会名は毎回入れ直す
 
+    # ★ **1枚で印刷できるようにする**（孝さん・2026-09-29）。
+    #   実物は「98%で印刷」のままで「1ページに収める」が効いておらず、表の横幅が
+    #   A3に収まらずに女子の個人組手から2枚目に回っていた。最終行の下の手動の
+    #   改ページ（78行目）も要らないので外す
+    from openpyxl.worksheet.pagebreak import RowBreak
+    from openpyxl.worksheet.properties import PageSetupProperties
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1
+    ws.page_setup.scale = None
+    ws.row_breaks = RowBreak()
+
     wb.save(DST)
     tmp.unlink()
 
