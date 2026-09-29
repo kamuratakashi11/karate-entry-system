@@ -19,6 +19,10 @@
   table.st thead th { background:var(--surface-2); font-size:11.5px; color:var(--ink-3);
                       letter-spacing:.06em; border-bottom:1px solid var(--line); white-space:nowrap; }
   table.st td.c, table.st th.c { text-align:center; }
+  /* 学校名はダブルクリックでその学校として入れる（登録の訂正用） */
+  table.st td.act-as { cursor:pointer; user-select:none; }
+  table.st td.act-as:hover { color:var(--accent); text-decoration:underline;
+    text-underline-offset:3px; }
   table.st tbody tr:hover { background:var(--surface-2); }
   tr.none td { color:var(--ink-3); }
   .tag { display:inline-block; font-size:11px; padding:0 7px; border-radius:999px;
@@ -98,7 +102,8 @@
           <tbody></tbody>
         </table>
       </div>
-      <p class="hint">数字は人数です。団体組手の「3」「5」は人数制、「—」は出場しない設定。</p>
+      <p class="hint">数字は人数です。団体組手の「3」「5」は人数制、「—」は出場しない設定。
+        学校名を<b>ダブルクリック</b>すると、その学校として申込画面に入って登録を直せます（別のタブで開きます）。</p>
     </section>
   </section>
 
@@ -345,7 +350,8 @@ function renderStatus() {
     const c = r.counts;
     const mode = (m) => m === "none" ? "—" : (m || "");
     return `<tr class="${r.entered === 0 ? "none" : ""}">
-      <td>${esc(r.name)}</td>
+      <td class="act-as" data-school="${esc(r.school_id)}"
+        title="ダブルクリックで、この学校として申込画面に入ります（登録の訂正用）">${esc(r.name)}</td>
       <td class="c">${r.advisors || '<span class="zero">0</span>'}</td>
       <td class="c">${r.members || '<span class="zero">0</span>'}</td>
       <td class="c">${pair(c["男子"].tk, c["女子"].tk)}</td>
@@ -358,6 +364,24 @@ function renderStatus() {
     </tr>`;
   }).join("");
 }
+
+/* 学校名をダブルクリック → その学校として申込画面に入る（登録の訂正用。
+   孝さん・2026-09-29）。学校の画面は**いつも同じ1つのタブ**で開く。学校ごとに
+   タブを増やすと、前の学校のタブから保存しかねない（サーバーも断るが、そもそも
+   開いたままにしない） */
+$("#st-table").addEventListener("dblclick", async (ev) => {
+  const td = ev.target.closest("td.act-as");
+  if (!td) return;
+  const tab = window.open("", "entry-school");     // ポップアップ止めに掛からないよう先に開く
+  const b = await api("admin_act_as", { school_id: td.dataset.school });
+  if (!b.ok) {
+    if (tab) tab.close();
+    alert(b.error || "この学校に入れませんでした");
+    return;
+  }
+  if (tab) tab.location.href = "index.html";
+  else location.href = "index.html";
+});
 
 /* 押印済み申込書。提出物はファイル名だけで管理している（uploads.php の説明）ので、
    ここに出るのは admin_state が実フォルダを見て返した内容そのもの */

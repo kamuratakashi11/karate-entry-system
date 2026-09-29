@@ -9,10 +9,19 @@ let S = null;        // state: {school, members, tournament, limits, year, entri
 let currentTab = "advisors";
 let entryDirty = false;
 
+/* 送るときは「この画面が読み込んだ学校」を添える。管理者が学校として入る機能で
+   同じブラウザのまま別の学校に切り替わっていたら、サーバーが保存を断る
+   （前の学校の画面から保存して、切り替えた先の学校に書き込むのを防ぐ） */
+function postHeaders(extra) {
+  const h = { "X-Entry-Api": "1", ...extra };
+  if (S && S.school && S.school.id) h["X-Entry-School"] = S.school.id;
+  return h;
+}
+
 async function api(action, data) {
   const res = await fetch(data === undefined ? `api.php?action=${action}` : "api.php", {
     method: data === undefined ? "GET" : "POST",
-    headers: data === undefined ? {} : { "Content-Type": "application/json", "X-Entry-Api": "1" },
+    headers: data === undefined ? {} : postHeaders({ "Content-Type": "application/json" }),
     body: data === undefined ? undefined : JSON.stringify({ action, ...data }),
   });
   let body = null;
@@ -76,7 +85,10 @@ async function doLogin() {
 }
 
 async function doLogout() {
-  await api("logout", {});
+  const acting = S && S.acting_admin;
+  const body = await api("logout", {});
+  // 管理者が学校として入っていたときは、学校の操作だけ終えて管理画面へ戻る
+  if (acting && body.admin) { location.href = "admin.html"; return; }
   S = null;
   $("#view-app").classList.add("hidden");
   $("#view-login").classList.remove("hidden");
@@ -97,6 +109,10 @@ async function loadState() {
   $("#view-login").classList.add("hidden");
   $("#view-app").classList.remove("hidden");
   $("#hd-school").textContent = S.school.name;
+  // 管理者が学校として入っているときは、取り違えないよう画面の上に帯を出す
+  $("#acting-name").textContent = S.school.name;
+  $("#acting").classList.toggle("hidden", !S.acting_admin);
+  $("#btn-logout").textContent = S.acting_admin ? "管理画面に戻る" : "ログアウト";
   $("#hd-title").textContent = S.tournament
     ? `令和${S.year}年度 ${S.tournament.name} — 参加申込` : "参加申込（受付中の大会なし）";
   renderDue();
@@ -565,7 +581,7 @@ async function uploadForm() {
     // 送るのはファイルだけなので JSON の api() は通さない。CSRF よけの
     // ヘッダ（X-Entry-Api）は同じ決まりで付ける
     const res = await fetch("api.php?action=upload_form",
-      { method: "POST", headers: { "X-Entry-Api": "1" }, body: fd });
+      { method: "POST", headers: postHeaders(), body: fd });
     let body = null;
     try { body = await res.json(); } catch { /* 下で拾う */ }
     if (!body) throw new Error(`送信できませんでした（HTTP ${res.status}）`);

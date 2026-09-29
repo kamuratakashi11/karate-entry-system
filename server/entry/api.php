@@ -70,6 +70,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
     fail('不正なリクエスト', 403);
 }
 
+// 画面が読み込んだ学校と、いまのログインの学校が違ったら保存させない。
+// 管理者が学校として入る機能では、同じブラウザで別の学校に切り替えられる。
+// 前の学校の画面を開いたまま保存すると、切り替えた先の学校に書き込まれてしまう
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && !in_array($action, ['login', 'logout'], true)
+    && ($_SERVER['HTTP_X_ENTRY_SCHOOL'] ?? '') !== ''
+    && ($_SERVER['HTTP_X_ENTRY_SCHOOL'] ?? '') !== (string)($_SESSION['school_id'] ?? '')) {
+    fail('別の学校に切り替わっています。画面を読み込み直してから操作してください', 409);
+}
+
 try {
     switch ($action) {
 
@@ -89,6 +99,10 @@ try {
         }
 
         case 'logout': {
+            if (acting_as_admin()) {
+                stop_acting();          // 管理者のログインは残す
+                out(['ok' => true, 'admin' => is_admin()]);
+            }
             $_SESSION = [];
             session_destroy();
             out(['ok' => true]);
@@ -106,6 +120,7 @@ try {
             }
             out(['ok' => true,
                  'school' => [
+                     'id'        => (string)$s['school_id'],
                      'name'      => $s['base_name'],
                      'principal' => $s['principal'],
                      'advisors'  => (array)json_decode((string)$s['advisors_json'], true),
@@ -119,6 +134,8 @@ try {
                  'uploads'    => $tid ? upload_scan($tid, (string)$s['school_id']) : [],
                  'upload_limit' => upload_limit_text(),
                  'upload_limit_bytes' => upload_limit_bytes(),
+                 // 管理者が学校として入っているか（画面に帯を出す）
+                 'acting_admin' => acting_as_admin(),
             ]);
         }
 

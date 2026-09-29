@@ -46,6 +46,7 @@ function login_school(string $schoolName, string $password): ?array
     }
     session_regenerate_id(true);
     $_SESSION['school_id'] = $row['school_id'];
+    unset($_SESSION['acting_admin']);      // パスワードで入った＝学校本人
     return $row;
 }
 
@@ -54,7 +55,40 @@ function current_school(): ?array
     if (empty($_SESSION['school_id'])) {
         return null;
     }
+    // 管理者が学校として入っているときは、管理者のログインが切れたら学校の操作も終わる
+    if (acting_as_admin() && !is_admin()) {
+        return null;
+    }
     return school_by_id((string)$_SESSION['school_id']);
+}
+
+/**
+ * 管理者が学校として入る（受付状況の学校名をダブルクリック。孝さん・2026-09-29
+ * 「登録を間違える学校があるので、こちらから訂正できるようにしたい」）。
+ *
+ * 管理者はもともと学校のパスワードを作り直せるので、できることは増えない。
+ * 学校のパスワードを知らなくても・変えなくても直せるようにするための入口。
+ */
+function act_as_school(string $schoolId): ?array
+{
+    $row = school_by_id($schoolId);
+    if (!$row) {
+        return null;
+    }
+    $_SESSION['school_id'] = $row['school_id'];
+    $_SESSION['acting_admin'] = true;
+    return $row;
+}
+
+function acting_as_admin(): bool
+{
+    return !empty($_SESSION['acting_admin']);
+}
+
+/** 学校としての操作だけを終える（管理者のログインは残す） */
+function stop_acting(): void
+{
+    unset($_SESSION['school_id'], $_SESSION['acting_admin']);
 }
 
 /* ---- 管理者（専門部） ---- */

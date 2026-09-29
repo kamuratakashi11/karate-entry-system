@@ -181,7 +181,20 @@ try {
 
         case 'admin_logout':
             unset($_SESSION['admin_ok']);
+            if (acting_as_admin()) {
+                stop_acting();          // 学校として入っていた分も一緒に終える
+            }
             aout(['ok' => true]);
+
+        // 受付状況の学校名をダブルクリック → その学校として申込画面に入る
+        case 'admin_act_as': {
+            require_admin();
+            $row = act_as_school((string)($in['school_id'] ?? ''));
+            if (!$row) {
+                afail('学校が見つかりません', 404);
+            }
+            aout(['ok' => true, 'school' => $row['base_name']]);
+        }
 
         case 'admin_state': {
             require_admin();

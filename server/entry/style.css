@@ -39,6 +39,11 @@ header.top h1 { margin:0; font-size:19px; letter-spacing:.02em; }
          color:var(--ink-2); font-size:12.5px; }
 .facts b { color:var(--ink); font-weight:600; }
 .facts a { color:var(--ink-3); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+/* 管理者が学校として入っているときの帯 */
+.acting { margin:0 0 10px; padding:7px 12px; border:1px solid var(--warn);
+          border-radius:var(--radius, 3px); background:var(--warn-bg); color:var(--warn);
+          font-size:13px; }
+.acting b { color:inherit; }
 .due { padding:1px 8px; border:1px solid var(--line); border-radius:999px;
        background:var(--surface); font-size:12px; color:var(--ink-2); }
 

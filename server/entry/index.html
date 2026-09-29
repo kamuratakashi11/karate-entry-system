@@ -31,6 +31,11 @@
 <div id="view-app" class="hidden">
 <div class="wrap">
 
+  <!-- 管理者が学校として入っているときだけ出す（取り違え防止） -->
+  <div class="acting hidden" id="acting" role="status">
+    管理者として <b id="acting-name"></b> の申込を操作しています。保存するとこの学校の申込が変わります。
+  </div>
+
   <header class="top">
     <p class="kicker">大会申込システム ｜ 埼玉県高体連 空手道専門部</p>
     <h1 id="hd-title">—</h1>
