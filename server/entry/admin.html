@@ -167,9 +167,6 @@
           <p>団体組手の登録選手（補欠含む）。タイマーの <span class="num">team_roster.csv</span> として置くだけで使えます。</p>
           <a class="btn" href="admin_api.php?action=export&kind=roster_m">男子</a>
           <a class="btn" href="admin_api.php?action=export&kind=roster_w">女子</a></div>
-        <div class="item"><h4>集計（CSV）</h4>
-          <p>学校ごとの顧問数・部員数・種目別人数。表計算で並べ替えたいときに。</p>
-          <a class="btn" href="admin_api.php?action=export&kind=schools">ダウンロード</a></div>
         <div class="item"><h4>抽選用データ（JSON）</h4>
           <p>組合せ抽選に渡す候補一式。種目・階級ごとの<b>シード選手（順位順）</b>と
              <b>学校別の出場選手（番手順）</b>、団体戦は<b>学校ごとのチームのメンバー（補欠を含む）</b>。
@@ -183,11 +180,12 @@
           この画面の管理者パスワードを聞かれます）。全種目のトーナメント盤面が自動で生成され、
           下の一覧ページにそろいます。</p>
         <p style="margin:0 0 6px">
-          <a class="btn primary" href="../draw/t/" target="_blank">組合せの盤面一覧をひらく</a>
-          <a class="btn" href="../draw/" target="_blank">従来の調整画面</a></p>
+          <a class="btn primary" href="../draw/t/" target="_blank">組合せの盤面一覧をひらく</a></p>
         <p class="hint" style="margin:0">盤面の一覧にはBASIC認証（drawのパスワード）が掛かっています。
           組合せの規則（表の形・シード位置）は手元のPythonだけが持ち、サーバーには置かない決まりです。
-          上の「抽選用データ」は、候補を手で直してから流し直したいとき用です。</p>
+          上の「抽選用データ」は、候補を手で直してから流し直したいとき用です。
+          抽選会準備と同時に、大会運営に送る<b>山組（空欄）</b>の Excel が手元の
+          「ドキュメント\空手_山組と組合せ」にできます。</p>
       </div>
     </section>
   </section>

@@ -96,7 +96,7 @@ $step('www の中にDBが残っていない', !is_file($dbHere));
 <body>
 <h1>申込窓口 初回設置</h1>
 <?php if ($ok): ?>
-  <div class="banner ok">✅ できました — 次は <a href="check.php">check.php で配備チェック</a></div>
+  <div class="banner ok">✅ できました — この setup.php を削除してから <a href="./">申込窓口</a> を開いて確かめてください</div>
 <?php else: ?>
   <div class="banner ng">❌ 途中で止まりました — 赤い行をそのまま伝えてください</div>
 <?php endif; ?>
