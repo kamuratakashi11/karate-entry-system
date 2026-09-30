@@ -420,6 +420,9 @@ try {
                     weight_list($t['weights_m'] ?? null), weight_list($t['weights_w'] ?? null));
                 $tmp = tempnam(sys_get_temp_dir(), 'slist_') . '.xlsx';
                 XlsxFill::fill($tpl, $tmp, $cells);
+                // 学校を書いた行は必ず見せ、余った行だけを隠す（様式の非表示のままだと
+                // 11校目と32校目以降が見えなかった）
+                XlsxFill::setHiddenRows($tmp, SchoolListForm::hiddenRows(count($schools)));
                 header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
                 header("Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode('参加校一覧.xlsx'));
                 header('Content-Length: ' . (string)filesize($tmp));

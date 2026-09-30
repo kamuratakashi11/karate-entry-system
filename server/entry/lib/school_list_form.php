@@ -40,6 +40,24 @@ final class SchoolListForm
     const COL_TOTAL_ALL = 47;   // AU
 
     /**
+     * 学校の行の表示／非表示（XlsxFill::setHiddenRows に渡す）。
+     *
+     * 様式（昨年度の実物から作った）は 17行目と38〜74行目が隠れていて、7行目から
+     * 順に書くと11校目と32校目以降が見えなかった（孝さん・2026-09-30）。
+     * **学校を書いた行は必ず見せ、余った行だけを隠す**（印刷に空行を並べない）。
+     *
+     * @return array<int,bool> 行番号 => 隠すなら true
+     */
+    public static function hiddenRows(int $schoolCount): array
+    {
+        $out = [];
+        for ($r = self::ROW_FIRST; $r <= self::ROW_LAST; $r++) {
+            $out[$r] = $r - self::ROW_FIRST >= $schoolCount;
+        }
+        return $out;
+    }
+
+    /**
      * @param array $schools 学校ごと: school_no / name / entries / m_mode / w_mode
      * @return array<string,int|string>
      */

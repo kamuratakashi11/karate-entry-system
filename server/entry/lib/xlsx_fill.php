@@ -60,6 +60,51 @@ final class XlsxFill
         return $written;
     }
 
+    /**
+     * 行の表示／非表示だけを書き換える（値・書式には触れない）。
+     *
+     * 様式には元の大会の学校数に合わせて行が隠してあることがある（参加校一覧は
+     * 17行目と38〜74行目が非表示だった＝11校目と32校目以降が見えなかった。
+     * 2026-09-30）。書いた行は必ず見せ、余った行だけを隠すのに使う。
+     *
+     * @param array<int,bool> $hidden 行番号 => 隠すなら true、見せるなら false
+     */
+    public static function setHiddenRows(string $path, array $hidden): void
+    {
+        $zip = new ZipArchive();
+        if ($zip->open($path) !== true) {
+            throw new RuntimeException("zipとして開けない: {$path}");
+        }
+        try {
+            $sheetPath = self::firstSheetPath($zip);
+            $doc = new DOMDocument();
+            if (!$doc->loadXML((string)$zip->getFromName($sheetPath))) {
+                throw new RuntimeException('シートXMLを解釈できない');
+            }
+            $sheetData = $doc->getElementsByTagNameNS(self::NS, 'sheetData')->item(0);
+            $rows = [];
+            foreach ($doc->getElementsByTagNameNS(self::NS, 'row') as $row) {
+                $rows[(int)$row->getAttribute('r')] = $row;
+            }
+            foreach ($hidden as $r => $hide) {
+                $row = $rows[$r] ?? ($hide ? self::insertRow($doc, $sheetData, $r) : null);
+                if (!$row) {
+                    continue;
+                }
+                if ($hide) {
+                    $row->setAttribute('hidden', '1');
+                } else {
+                    $row->removeAttribute('hidden');
+                }
+            }
+            if ($zip->addFromString($sheetPath, $doc->saveXML()) !== true) {
+                throw new RuntimeException('シートXMLの書き戻しに失敗');
+            }
+        } finally {
+            $zip->close();
+        }
+    }
+
     /** 列番号(1始まり) → 列名。1 → A, 27 → AA */
     public static function colName(int $n): string
     {
