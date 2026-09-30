@@ -333,18 +333,36 @@ try {
                 $short[$r['school_id']] = $r['short_name'] ?: $r['name'];
             }
 
-            if ($kind === 'advisors') {
-                // 実物「顧問出欠」と同じ並び: 通番 / 学校名（略称）/ 顧問名 / 1日目 / 2日目
-                // 学校は学校番号順、同じ学校の中は登録順。細部は人が手を入れる前提
-                $rows = [];
-                $n = 0;
+            if ($kind === 'advisors' || $kind === 'advisors_xlsx') {
+                // 実物「顧問出欠」と同じ並び: 通番 / 学校名（略称）/ 顧問名 / 1日目 / 2日目 / 役割
+                // 学校は学校番号順、同じ学校の中は登録順。細部は人が手を入れる前提。
+                // Excel（印刷用・見本の体裁）と CSV（本部ハブの審判の割り振りが読む）は
+                // 同じ並びから作る（並べ方をここ1か所にする）
+                $list = [];
                 foreach ($status as $r) {
                     $s = school_by_id($r['school_id']);
                     foreach ((array)json_decode((string)$s['advisors_json'], true) as $a) {
-                        $rows[] = [++$n, $r['short_name'] ?: $r['name'], $a['name'] ?? '',
-                                   !empty($a['d1']) ? '○' : '×', !empty($a['d2']) ? '○' : '×',
-                                   $a['role'] ?? ''];
+                        $list[] = ['school' => $r['short_name'] ?: $r['name'],
+                                   'name'   => (string)($a['name'] ?? ''),
+                                   'role'   => (string)($a['role'] ?? ''),
+                                   'd1'     => !empty($a['d1']) ? '○' : '×',
+                                   'd2'     => !empty($a['d2']) ? '○' : '×'];
                     }
+                }
+                if ($kind === 'advisors_xlsx') {
+                    require_once ENTRY_LIB_DIR . '/advisor_sheet.php';
+                    $tmp = tempnam(sys_get_temp_dir(), 'adv_') . '.xlsx';
+                    AdvisorSheet::write($tmp, $list);
+                    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+                    header("Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode('顧問出欠.xlsx'));
+                    header('Content-Length: ' . (string)filesize($tmp));
+                    readfile($tmp);
+                    unlink($tmp);
+                    exit;
+                }
+                $rows = [];
+                foreach ($list as $i => $a) {
+                    $rows[] = [$i + 1, $a['school'], $a['name'], $a['d1'], $a['d2'], $a['role']];
                 }
                 csv_out('顧問出欠.csv', ['通番', '学校名', '顧問名', '1日目', '2日目', '役割'], $rows);
             }

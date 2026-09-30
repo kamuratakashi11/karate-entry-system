@@ -160,9 +160,11 @@
           <p>例年の様式そのまま。行＝学校・列＝種目で、団体は○、個人は人数と別枠シードの2列。
              合計行は開いた時点で計算されます。</p>
           <a class="btn primary" href="admin_api.php?action=export&kind=schoollist">ダウンロード</a></div>
-        <div class="item"><h4>顧問出欠（CSV）</h4>
-          <p>通番・学校名・顧問名・1日目・2日目。役割の列も付けてあります（不要なら消してください）。</p>
-          <a class="btn" href="admin_api.php?action=export&kind=advisors">ダウンロード</a></div>
+        <div class="item"><h4>顧問出欠（Excel）</h4>
+          <p>例年の「顧問出欠」の形（通番・学校名・顧問名・<b>役割</b>・1日目・2日目を左右2列、計・総計つき）。
+             A4縦1枚で印刷できます。CSV は本部ハブの審判の割り振りに読ませる用です。</p>
+          <a class="btn primary" href="admin_api.php?action=export&kind=advisors_xlsx">Excel</a>
+          <a class="btn" href="admin_api.php?action=export&kind=advisors">CSV</a></div>
         <div class="item"><h4>タイマー用 選手名簿（CSV）</h4>
           <p>団体組手の登録選手（補欠含む）。タイマーの <span class="num">team_roster.csv</span> として置くだけで使えます。</p>
           <a class="btn" href="admin_api.php?action=export&kind=roster_m">男子</a>
