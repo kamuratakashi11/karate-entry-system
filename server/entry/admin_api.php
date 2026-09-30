@@ -352,7 +352,10 @@ try {
                 if ($kind === 'advisors_xlsx') {
                     require_once ENTRY_LIB_DIR . '/advisor_sheet.php';
                     $tmp = tempnam(sys_get_temp_dir(), 'adv_') . '.xlsx';
-                    AdvisorSheet::write($tmp, $list);
+                    // 2枚目「コート・本部記録」のコートの候補（エントリー人数の多い学校）に使う
+                    $schools = array_map(fn($r) => ['school' => $r['short_name'] ?: $r['name'],
+                                                    'entered' => (int)$r['entered']], $status);
+                    AdvisorSheet::write($tmp, $list, $schools);
                     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
                     header("Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode('顧問出欠.xlsx'));
                     header('Content-Length: ' . (string)filesize($tmp));
