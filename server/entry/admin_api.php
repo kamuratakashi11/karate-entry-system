@@ -431,6 +431,29 @@ try {
                 exit;
             }
 
+            if ($kind === 'weigh') {
+                // 計量チェック表（Excel）。個人組手の階級ごとに 1 枚
+                $weights = ['男子' => weight_list($t['weights_m'] ?? null),
+                            '女子' => weight_list($t['weights_w'] ?? null)];
+                if (!$weights['男子'] && !$weights['女子']) {
+                    afail('この大会には階級がないので、計量チェック表は作れません');
+                }
+                require_once ENTRY_LIB_DIR . '/weigh_sheet.php';
+                $schools = array_map(fn($r) => ['school_id' => $r['school_id'],
+                                                'name' => $r['short_name'] ?: $r['name']], $status);
+                $classes = WeighSheet::collect($weights, $schools, 'members_of',
+                    fn(string $sid) => entries_of($t['id'], $sid)['by_name']);
+                $title = '令和' . config_get('year', '') . '年度　' . ($t['name'] ?? '');
+                $tmp = tempnam(sys_get_temp_dir(), 'weigh_') . '.xlsx';
+                WeighSheet::book($title, $classes)->save($tmp);
+                header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+                header("Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode('計量チェック表.xlsx'));
+                header('Content-Length: ' . (string)filesize($tmp));
+                readfile($tmp);
+                unlink($tmp);
+                exit;
+            }
+
             if ($kind === 'roster_m' || $kind === 'roster_w') {
                 // タイマーの team_roster.csv（Team, Player の2列）。補欠も出す
                 $sex = $kind === 'roster_m' ? '男子' : '女子';
