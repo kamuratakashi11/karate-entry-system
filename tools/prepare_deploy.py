@@ -46,7 +46,9 @@ APP_FILES = ["index.html", "style.css", "app.js", "api.php",
              # 級位審査（2026-10-14）。地紙 shinsa/*.png（審査用紙・領収書）は SUBDIRS で運ぶ
              "shinsa.php", "shinsa_print.html", "shinsa_print.js",
              "shinsa_receipt.html", "shinsa_receipt.js", "shinsa_day.php",
-             "shinsa_admin.html", "shinsa_admin.js", "shinsa_admin_api.php"]
+             "shinsa_admin.html", "shinsa_admin.js", "shinsa_admin_api.php",
+             # 締め切りの確認メール（2026-10-19）。remind_cron.php はさくらの cron から動かす
+             "remind.php", "remind_cron.php"]
 # lib/ は中身をまるごと運ぶ（大会ごとのテンプレート・座標が増えるため列挙しない）
 
 # 上げ直し（--update）で運ぶもの。setup.php は初回だけの道具なので入れない

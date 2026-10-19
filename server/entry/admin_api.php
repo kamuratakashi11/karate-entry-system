@@ -10,6 +10,7 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/uploads.php';
 require_once __DIR__ . '/shinsa.php';
+require_once __DIR__ . '/remind.php';
 
 // 「人数制限」の画面から書き換えてよい項目。ここに無いものは受け取っても捨てる。
 // 個人種目は正と補欠が別のキーに分かれている（もとのデータの形に合わせてある）。
@@ -321,6 +322,89 @@ try {
             db()->prepare('INSERT OR REPLACE INTO config VALUES (?,?)')
                 ->execute(['tournaments', json_encode($ts, JSON_UNESCAPED_UNICODE)]);
             aout(['ok' => true]);
+        }
+
+        // ---- 締め切りの確認メール（remind.php。段階 3・2026-10-19） ----
+        case 'admin_mail_state': {
+            require_admin();
+            $emails = school_emails();
+            $schools = db()->query('SELECT school_id, base_name, school_no FROM schools')->fetchAll();
+            usort($schools, fn($a, $b) => [(int)$a['school_no'], $a['base_name']] <=> [(int)$b['school_no'], $b['base_name']]);
+            aout(['ok' => true, 'settings' => mail_settings(), 'remind_days' => REMIND_DAYS,
+                  'schools' => array_map(fn($s) => ['school_id' => (string)$s['school_id'], 'name' => (string)$s['base_name'],
+                      'emails' => $emails[(string)$s['school_id']] ?? []], $schools),
+                  'plan' => remind_plan(date('Y-m-d')), 'today' => date('Y-m-d')]);
+        }
+
+        case 'admin_mail_settings': {
+            require_admin();
+            $set = mail_settings();
+            $errors = [];
+            foreach (['from' => '送り主', 'reply_to' => '返信先'] as $k => $label) {
+                $v = trim((string)($in[$k] ?? ''));
+                if ($v !== '' && !filter_var($v, FILTER_VALIDATE_EMAIL)) {
+                    $errors[] = "{$label}のアドレスの形がおかしいです";
+                }
+                $set[$k] = $v;
+            }
+            $set['sign'] = trim((string)($in['sign'] ?? '')) ?: $set['sign'];
+            $set['url'] = trim((string)($in['url'] ?? '')) ?: $set['url'];
+            if ($errors) {
+                aout(['ok' => false, 'errors' => $errors], 422);
+            }
+            db()->prepare('INSERT OR REPLACE INTO config VALUES (?,?)')
+                ->execute(['mail_settings', json_encode($set, JSON_UNESCAPED_UNICODE)]);
+            aout(['ok' => true]);
+        }
+
+        // 学校ごとのアドレス（全部まとめて置き換え）。1 校に何人でも（, や空白で区切る）
+        case 'admin_mail_emails': {
+            require_admin();
+            $names = array_column(db()->query('SELECT school_id, base_name FROM schools')->fetchAll(), 'base_name', 'school_id');
+            $store = [];
+            $errors = [];
+            foreach ((array)($in['emails'] ?? []) as $sid => $text) {
+                if (!isset($names[$sid])) {
+                    continue;
+                }
+                [$ok, $bad] = split_emails((string)$text);
+                foreach ($bad as $b) {
+                    $errors[] = "{$names[$sid]}: 「{$b}」はメールアドレスの形ではありません";
+                }
+                if ($ok) {
+                    $store[(string)$sid] = $ok;
+                }
+            }
+            if ($errors) {
+                aout(['ok' => false, 'errors' => $errors], 422);
+            }
+            db()->prepare('INSERT OR REPLACE INTO config VALUES (?,?)')
+                ->execute(['school_emails', json_encode($store, JSON_UNESCAPED_UNICODE)]);
+            aout(['ok' => true, 'count' => count($store)]);
+        }
+
+        // 試しに 1 通（いちばん近い締め切りの文面を、返信先のアドレスへ）。送った記録には残さない
+        case 'admin_mail_test': {
+            require_admin();
+            $set = mail_settings();
+            if (!filter_var($set['from'], FILTER_VALIDATE_EMAIL) || !filter_var($set['reply_to'], FILTER_VALIDATE_EMAIL)) {
+                afail('先に送り主と返信先のアドレスを保存してください（試しのメールは返信先へ送ります）');
+            }
+            $d = upcoming_deadlines()[0] ?? ['kind' => '大会', 'name' => '（見本）大会', 'deadline' => date('Y-m-d', strtotime('+14 days'))];
+            $school = db()->query('SELECT * FROM schools ORDER BY school_no LIMIT 1')->fetch() ?: ['school_id' => '', 'base_name' => '見本'];
+            [$subject, $body] = remind_message($d, $school, $set,
+                (int)round((strtotime($d['deadline']) - strtotime(date('Y-m-d'))) / 86400));
+            if (!send_mail($set['reply_to'], '【試し】' . $subject, $body, $set)) {
+                afail('送れませんでした（サーバーのメールの設定を確かめてください）');
+            }
+            aout(['ok' => true, 'to' => $set['reply_to'], 'subject' => $subject, 'body' => $body]);
+        }
+
+        // 送る日が来たものを、いま送る（ふだんは cron が毎朝送る。cron を設定する前や、確かめたいとき）
+        case 'admin_mail_run': {
+            require_admin();
+            $res = remind_run(date('Y-m-d'));
+            aout(['ok' => !$res['errors'], 'sent' => $res['sent'], 'errors' => $res['errors']]);
         }
 
         // ---- 級位審査の管理画面のパスワード（審査担当の先生に渡す。専門部が決める） ----

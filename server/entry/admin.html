@@ -77,6 +77,7 @@
     <button class="step" data-tab="uploads"><span>提出書類</span><span class="st" id="st-up">—</span></button>
     <button class="step" data-tab="export"><span>データ出力</span></button>
     <button class="step" data-tab="settings"><span>大会設定</span></button>
+    <button class="step" data-tab="mail"><span>メール</span><span class="st" id="st-mail">—</span></button>
     <button class="step" data-tab="accounts"><span>アカウント</span></button>
   </nav>
 
@@ -288,6 +289,78 @@
     </section>
   </section>
 
+  <!-- 締め切りの確認メール -->
+  <section id="tab-mail" class="hidden">
+    <section class="blk">
+      <div class="blk-head"><h2>送る予定</h2>
+        <span class="aux" id="ml-aux"></span></div>
+      <div class="pane" style="margin-top:12px">
+        <div class="tblwrap">
+          <table class="st">
+            <thead><tr><th>締め切り</th><th></th><th>送る日</th><th>状態</th></tr></thead>
+            <tbody id="ml-plan"></tbody>
+          </table>
+        </div>
+        <div id="ml-plan-none" class="offnote hidden">これからの締め切りはありません（「大会設定」の年間の締め切りと、級位審査の管理画面で入れます）。</div>
+        <div class="rowform" style="margin-top:10px">
+          <button class="btn" id="ml-test">試しに 1 通送る（返信先へ）</button>
+          <button class="btn" id="ml-run">送る日が来たものを、いま送る</button>
+          <span id="ml-msg" class="okmsg"></span>
+        </div>
+        <p class="hint">締め切りの <b id="ml-days"></b> 日前に、アドレスの入っているすべての学校へ自動で送ります（受付中のものだけ。同じ締め切りには 1 回だけ）。
+          自動で送るには、さくらのコントロールパネルで「スクリプト設定（CRON）」に 1 行入れます（手順は配備の手順書）。</p>
+        <pre id="ml-preview" class="howto hidden" style="white-space:pre-wrap; padding:10px 12px; margin-top:10px"></pre>
+      </div>
+      <div id="ml-errors" class="errbox hidden"></div>
+    </section>
+
+    <section class="blk">
+      <div class="blk-head"><h2>送り主と文面</h2></div>
+      <div class="pane" style="margin-top:12px">
+        <div class="rowform"><label class="aux" style="width:7em">送り主</label>
+          <input type="text" id="ml-from" size="34" placeholder="例: info@saitamahs-karate.sakura.ne.jp"></div>
+        <div class="rowform"><label class="aux" style="width:7em">返信先</label>
+          <input type="text" id="ml-reply" size="34" placeholder="返事を受け取るアドレス"></div>
+        <div class="rowform"><label class="aux" style="width:7em">名前（署名）</label>
+          <input type="text" id="ml-sign" size="34"></div>
+        <div class="rowform"><label class="aux" style="width:7em">申込のページ</label>
+          <input type="text" id="ml-url" size="44"></div>
+        <div class="rowform" style="margin-top:10px">
+          <button class="btn primary" id="ml-set-save">保存</button>
+          <span id="ml-set-msg" class="okmsg"></span>
+        </div>
+        <p class="hint">送り主は、さくらで作ったこのドメインのアドレスにしてください（ほかのドメインを名乗ると迷惑メールに入りやすくなります）。
+          先生方の返事は返信先に届きます。</p>
+      </div>
+      <div id="ml-set-errors" class="errbox hidden"></div>
+    </section>
+
+    <section class="blk">
+      <div class="blk-head"><h2>学校のアドレス</h2>
+        <span class="aux" id="ml-count"></span></div>
+      <div class="pane" style="margin-top:12px">
+        <details class="howto">
+          <summary>まとめて貼り付ける（Excel から 2 列をコピー）</summary>
+          <p>「学校名」と「アドレス」の 2 列をそのまま貼り付けて「表に入れる」を押します。
+            学校名は下の表の名前と同じものだけ入ります。1 校に何人でも（同じ学校を何行でも）。</p>
+          <p><textarea id="ml-paste" rows="5" style="width:100%; font:inherit"></textarea></p>
+          <p><button class="btn" id="ml-paste-go">表に入れる</button> <span id="ml-paste-msg" class="aux"></span></p>
+        </details>
+        <div class="tblwrap">
+          <table class="st">
+            <thead><tr><th>学校</th><th>アドレス（何人でも。「,」で区切る）</th></tr></thead>
+            <tbody id="ml-emails"></tbody>
+          </table>
+        </div>
+        <div class="rowform" style="margin-top:10px">
+          <button class="btn primary" id="ml-emails-save">アドレスを保存</button>
+          <span id="ml-emails-msg" class="okmsg"></span>
+        </div>
+      </div>
+      <div id="ml-emails-errors" class="errbox hidden"></div>
+    </section>
+  </section>
+
   <!-- アカウント -->
   <section id="tab-accounts" class="hidden">
     <section class="blk">
@@ -351,6 +424,7 @@ async function load() {
   $("#weak").classList.toggle("hidden", !A.weak_password);
   renderDue(); renderSummary(); renderStatus(); renderUploads(); renderUploadGroups();
   renderSettings(); renderLimits(); renderAccounts();
+  await loadMail();
 }
 
 function renderDue() {
@@ -589,10 +663,66 @@ function renderAccounts() {
   }));
 }
 
+/* ---- 締め切りの確認メール ---- */
+let ML = null;
+
+async function loadMail() {
+  const b = await api("admin_mail_state");
+  if (!b.ok) return;
+  ML = b;
+  const s = ML.settings;
+  $("#ml-from").value = s.from; $("#ml-reply").value = s.reply_to;
+  $("#ml-sign").value = s.sign; $("#ml-url").value = s.url;
+  $("#ml-days").textContent = ML.remind_days;
+  const withAddr = ML.schools.filter((x) => x.emails.length).length;
+  $("#ml-count").textContent = `アドレスあり ${withAddr}校 ／ 全 ${ML.schools.length}校`;
+  $("#st-mail").textContent = s.from ? `${withAddr}校` : "未設定";
+  $("#st-mail").classList.toggle("done", !!s.from && withAddr > 0);
+  $("#ml-emails").innerHTML = ML.schools.map((x) => `
+    <tr data-sid="${esc(x.school_id)}" data-name="${esc(x.name)}"><td style="white-space:nowrap">${esc(x.name)}</td>
+      <td><input type="text" class="ml-addr" style="width:100%" value="${esc(x.emails.join(", "))}"></td></tr>`).join("");
+  const md = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ""); return m ? `${+m[2]}月${+m[3]}日` : d; };
+  $("#ml-plan-none").classList.toggle("hidden", ML.plan.length > 0);
+  $("#ml-plan").innerHTML = ML.plan.map((p) => {
+    const state = p.sent ? `<span class="tag on">送りました</span> ${esc(p.sent)}`
+      : !p.open ? '<span class="tag">受付が始まっていないので、まだ送りません</span>'
+      : p.due ? '<span class="tag no">送る日です（cron か「いま送る」で送ります）</span>'
+      : '<span class="tag">送る日を待っています</span>';
+    return `<tr><td>${esc(md(p.deadline))}</td><td><span class="tag">${esc(p.kind)}</span> ${esc(p.name)}</td>
+      <td>${esc(md(p.send_on))}</td><td>${state}</td></tr>`;
+  }).join("");
+  $("#ml-aux").textContent = `今日 ${md(ML.today)}`;
+}
+
+function pasteEmails() {
+  const rows = $$("#ml-emails tr");
+  const byName = Object.fromEntries(rows.map((tr) => [tr.dataset.name, tr]));
+  const add = {};
+  const unknown = [];
+  $("#ml-paste").value.split(/\r?\n/).forEach((line) => {
+    const cols = line.split(/\t|,|，/).map((c) => c.trim()).filter(Boolean);
+    if (cols.length < 2) return;
+    // 学校名は「○○高校」「○○高等学校」でも表の名前に合わせる
+    const name = cols[0].replace(/(高等学校|高校)$/, "");
+    const tr = byName[cols[0]] || byName[name];
+    if (!tr) { unknown.push(cols[0]); return; }
+    (add[tr.dataset.sid] = add[tr.dataset.sid] || []).push(...cols.slice(1));
+  });
+  rows.forEach((tr) => {
+    const more = add[tr.dataset.sid];
+    if (!more) return;
+    const inp = tr.querySelector(".ml-addr");
+    const now = inp.value.split(/[\s,，、;]+/).filter(Boolean);
+    inp.value = [...new Set([...now, ...more])].join(", ");
+  });
+  $("#ml-paste-msg").textContent = `${Object.keys(add).length}校に入れました` +
+    (unknown.length ? `。表に無い学校名: ${unknown.join("・")}` : "") + "（まだ保存していません）";
+}
+
 function switchTab(name) {
   $$(".step").forEach((b) => b.dataset.tab === name
     ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
-  ["status", "uploads", "export", "settings", "accounts"].forEach((t) =>
+  ["status", "uploads", "export", "settings", "mail", "accounts"].forEach((t) =>
     $("#tab-" + t).classList.toggle("hidden", t !== name));
 }
 
@@ -639,6 +769,34 @@ window.addEventListener("DOMContentLoaded", async () => {
     const b = await api("admin_set_shinsa_password", { password: $("#sh-pw").value });
     if (showErrors("#sh-pw-errors", b.ok ? {} : b)) return;
     $("#sh-pw").value = ""; flash("#sh-pw-msg", "決めました"); await load();
+  };
+  $("#ml-set-save").onclick = async () => {
+    const b = await api("admin_mail_settings", { from: $("#ml-from").value, reply_to: $("#ml-reply").value,
+      sign: $("#ml-sign").value, url: $("#ml-url").value });
+    if (showErrors("#ml-set-errors", b.ok ? {} : b)) return;
+    flash("#ml-set-msg", "保存しました"); await loadMail();
+  };
+  $("#ml-emails-save").onclick = async () => {
+    const emails = {};
+    $$("#ml-emails tr").forEach((tr) => { emails[tr.dataset.sid] = tr.querySelector(".ml-addr").value; });
+    const b = await api("admin_mail_emails", { emails });
+    if (showErrors("#ml-emails-errors", b.ok ? {} : b)) return;
+    flash("#ml-emails-msg", `保存しました（${b.count}校）`); await loadMail();
+  };
+  $("#ml-paste-go").onclick = pasteEmails;
+  $("#ml-test").onclick = async () => {
+    const b = await api("admin_mail_test", {});
+    if (showErrors("#ml-errors", b.ok ? {} : b)) return;
+    $("#ml-preview").textContent = `宛先: ${b.to}\n件名: 【試し】${b.subject}\n\n${b.body}`;
+    $("#ml-preview").classList.remove("hidden");
+    flash("#ml-msg", `${b.to} へ送りました`);
+  };
+  $("#ml-run").onclick = async () => {
+    if (!confirm("送る日が来ていて、まだ送っていない締め切りのメールを、いま全校へ送ります。よろしいですか？")) return;
+    const b = await api("admin_mail_run", {});
+    showErrors("#ml-errors", b.errors && b.errors.length ? { errors: b.errors } : {});
+    flash("#ml-msg", b.sent && b.sent.length ? `${b.sent.length}件の締め切りについて送りました` : "いま送るものはありませんでした");
+    await loadMail();
   };
   $("#adm-save").onclick = async () => {
     const b = await api("admin_set_password", { password: $("#adm-pw").value });
