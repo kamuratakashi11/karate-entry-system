@@ -72,9 +72,12 @@ TEJUN_UPDATE = """申込窓口（/entry/）のプログラムを上げ直す手�
    ・www\\entry の中に「shinsa」フォルダを作り（初回だけ）、
      deploy_update\\www_entry\\shinsa の中身（{n_shinsa}個）を入れる
 
-3. 次に deploy_update\\www_entry の中のファイル（{n_files}個）を、www\\entry へ（上書き）
-   ・db.php・auth.php・shinsa.php を先に、残りをそのあとに上げると、
-     途中で画面が止まる時間がいちばん短くなります
+3. 次に deploy_update\\www_entry の中のファイル（{n_files}個）を、まとめて 1 回で
+   www\\entry へドラッグする（上書き）
+   ・ファイルどうしが中身を使い合っているので、上げ終わるまでの数秒〜数十秒は
+     画面がエラーになることがあります。全部そろえば直ります（順番に分けて上げると、
+     古いファイルと新しいファイルが混ざる時間が長くなるので、まとめて上げる）
+   ・lib と shinsa を先に上げるのは、新しい部品が増えるだけで今の画面に影響しないため
 
 4. 管理画面で確かめる
    https://saitamahs-karate.sakura.ne.jp/entry/admin.html
