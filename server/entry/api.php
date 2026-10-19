@@ -11,6 +11,7 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/uploads.php';
+require_once __DIR__ . '/shinsa.php';
 
 // 人数制限の既定と決め方（default_limits・limits_for）は db.php にある
 
@@ -53,11 +54,6 @@ function weight_names(?string $csv): array
         }
     }
     return $out;
-}
-
-function member_is_active(array $m): bool
-{
-    return !in_array(strtolower(trim((string)($m['active'] ?? ''))), ['false', '0'], true);
 }
 
 entry_session_start();
@@ -136,7 +132,69 @@ try {
                  'upload_limit_bytes' => upload_limit_bytes(),
                  // 管理者が学校として入っているか（画面に帯を出す）
                  'acting_admin' => acting_as_admin(),
+                 // ログインのあとの選ぶ画面（大会申込／級位審査申込）と、審査の申込
+                 'deadlines'  => upcoming_deadlines(),
+                 'today'      => date('Y-m-d'),
+                 'shinsa'     => shinsa_state_for($s),
             ]);
+        }
+
+        // ---- 級位審査の申込（学校ぶんの全上書き。決まりは shinsa.php） ----
+        case 'shinsa_save': {
+            $s = require_school();
+            $r = shinsa_open_round();
+            if (!$r || (string)($in['round_id'] ?? '') !== $r['id']) {
+                fail('受付中の審査の回が変わっています。画面を読み込み直してください', 409);
+            }
+            if (!shinsa_can_edit($r)) {
+                fail('締め切りを過ぎたため、申込は直せません。直す必要がある場合は審査部会へ連絡してください');
+            }
+            [$errors, $n] = shinsa_save($r, $s, (array)($in['apps'] ?? []));
+            if ($errors) {
+                fail_list($errors);
+            }
+            out(['ok' => true, 'count' => $n]);
+        }
+
+        // ---- 級位審査の領収書のための合否（審査のあと。顧問が選ぶ。管理画面で出せるようにしてから） ----
+        case 'shinsa_results': {
+            $s = require_school();
+            $r = shinsa_open_round();
+            if (!$r || (string)($in['round_id'] ?? '') !== $r['id']) {
+                fail('受付中の審査の回が変わっています。画面を読み込み直してください', 409);
+            }
+            $errors = shinsa_save_results($r, $s, (array)($in['results'] ?? []));
+            if ($errors) {
+                fail_list($errors);
+            }
+            out(['ok' => true]);
+        }
+
+        // ---- 級位審査の紙の申込書（審査部会の様式に書き込む。校長印を押して出す） ----
+        case 'shinsa_form': {
+            $s = require_school();
+            $r = shinsa_open_round();
+            if (!$r) {
+                fail('受付中の審査の回がありません');
+            }
+            $apps = shinsa_apps_of($r['id'], (string)$s['school_id']);
+            if (!$apps) {
+                fail('まだ申込が保存されていません');
+            }
+            $pages = shinsa_form_pages($apps);
+            $page = max(1, min($pages, (int)($_GET['page'] ?? 1)));
+            require_once ENTRY_LIB_DIR . '/xlsx_fill.php';
+            $tmp = tempnam(sys_get_temp_dir(), 'shinsa_') . '.xlsx';
+            XlsxFill::fill(ENTRY_LIB_DIR . '/template_shinsa.xlsx', $tmp,
+                shinsa_form_cells($r, $s, $apps, $page), '受審申込書 ');
+            $fname = '級位審査申込書_第' . ($r['no'] ?? '') . '回_' . $s['base_name']
+                . ($pages > 1 ? "_{$page}枚目" : '') . '.xlsx';
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header("Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode($fname));
+            header('Content-Length: ' . (string)filesize($tmp));
+            readfile($tmp);
+            unlink($tmp);
+            exit;
         }
 
         // ---- 顧問登録（校長名＋顧問一覧の全上書き） ----

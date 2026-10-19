@@ -118,6 +118,12 @@ function members_of(string $sid): array
     return $rows;
 }
 
+/** 名簿で「在籍」の部員か（active が false/0 なら外す）。大会と級位審査の両方が使う */
+function member_is_active(array $m): bool
+{
+    return !in_array(strtolower(trim((string)($m['active'] ?? ''))), ['false', '0'], true);
+}
+
 /** 学校のエントリー（entry_key "{sid}_{name}" → 中身。_meta_ は 'meta' キーで返す） */
 function entries_of(string $tid, string $sid): array
 {

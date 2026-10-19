@@ -5,9 +5,14 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
-let S = null;        // state: {school, members, tournament, limits, year, entries, meta}
+let S = null;        // state: {school, members, tournament, limits, year, entries, meta, deadlines, shinsa}
 let currentTab = "advisors";
 let entryDirty = false;
+let shinsaDirty = false;
+/* いま開いている申込。hub＝ログインのあとの選ぶ画面、taikai＝大会申込、shinsa＝級位審査申込。
+   読み込み直しても同じ画面に戻れるよう、URL の # に持つ */
+let mode = "hub";
+const MODE_FIRST_TAB = { taikai: "advisors", shinsa: "shinsa" };
 
 /* 送るときは「この画面が読み込んだ学校」を添える。管理者が学校として入る機能で
    同じブラウザのまま別の学校に切り替わっていたら、サーバーが保存を断る
@@ -113,30 +118,115 @@ async function loadState() {
   $("#acting-name").textContent = S.school.name;
   $("#acting").classList.toggle("hidden", !S.acting_admin);
   $("#btn-logout").textContent = S.acting_admin ? "管理画面に戻る" : "ログアウト";
-  $("#hd-title").textContent = S.tournament
-    ? `令和${S.year}年度 ${S.tournament.name} — 参加申込` : "参加申込（受付中の大会なし）";
-  renderDue();
   renderAdvisors();
   renderMembers();
   renderEntry();
   renderUploads();
+  renderHub();
+  renderShinsa();
+  renderSform();
   renderSteps();
   setDirty(false);
+  setShinsaDirty(false);
+  applyMode();
+}
+
+/* 'YYYY-MM-DD' → 「10月3日（あと5日）」。今日は**サーバーの日付**で数える
+   （端末の時計がずれていても、締め切りの判定と表示が食い違わないように） */
+function dueText(d, prefix = "締切 ") {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || "");
+  if (!m) return d ? prefix + d : "";
+  const t = /^(\d{4})-(\d{2})-(\d{2})$/.exec(S.today || "");
+  const today = t ? new Date(+t[1], +t[2] - 1, +t[3]) : new Date();
+  const days = Math.round((new Date(+m[1], +m[2] - 1, +m[3]) - today) / 86400000);
+  return `${prefix}${+m[2]}月${+m[3]}日` +
+    (days > 0 ? `（あと${days}日）` : days === 0 ? "（今日まで）" : "（締切済み）");
+}
+
+function mdText(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || "");
+  return m ? `${+m[2]}月${+m[3]}日` : (d || "");
 }
 
 function renderDue() {
   const el = $("#hd-due");
-  const d = S.tournament && S.tournament.deadline;
-  if (!d) { el.classList.add("hidden"); return; }
-  let text = `締切 ${d}`;
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
-  if (m) {
-    const due = new Date(+m[1], +m[2] - 1, +m[3]);
-    const days = Math.ceil((due - new Date()) / 86400000);
-    text = `締切 ${+m[2]}月${+m[3]}日` + (days >= 0 ? `（あと${days}日）` : "（締切済み）");
+  const d = mode === "taikai" ? (S.tournament && S.tournament.deadline)
+          : mode === "shinsa" ? (S.shinsa.round && S.shinsa.round.deadline) : "";
+  el.textContent = dueText(d);
+  el.classList.toggle("hidden", !d);
+}
+
+function renderTitle() {
+  const sr = S.shinsa.round;
+  $("#hd-title").textContent =
+      mode === "taikai" ? (S.tournament
+        ? `令和${S.year}年度 ${S.tournament.name} — 参加申込` : "参加申込（受付中の大会なし）")
+    : mode === "shinsa" ? (sr ? `${sr.title} — 受審申込` : "級位審査申込（受付中の回なし）")
+    : "申込メニュー";
+}
+
+/* ---------- 選ぶ画面と、大会／審査の切り替え ---------- */
+
+function renderHub() {
+  const t = S.tournament;
+  $("#hub-taikai-name").textContent = t ? t.name : "受付中の大会はありません";
+  $("#hub-taikai-due").textContent = t ? dueText(t.deadline) : "";
+  const r = S.shinsa.round;
+  $("#hub-shinsa-name").textContent = r
+    ? `第${r.no}回 級位審査会（${mdText(r.date)}）` : "受付中の級位審査はありません";
+  $("#hub-shinsa-due").textContent = r ? dueText(r.deadline) : "";
+  const dl = S.deadlines || [];
+  $("#dl-none").classList.toggle("hidden", dl.length > 0);
+  // スマートフォンでも読めるよう 2 列（何の締め切りか／いつまでか）にまとめる
+  $("#dl-list").innerHTML = dl.map((d) => `
+    <tr>
+      <td><span class="badge">${esc(d.kind)}</span> ${esc(d.name)}${d.date
+        ? ` <span class="aux">（${esc(mdText(d.date))}）</span>` : ""}</td>
+      <td class="dl-due">${esc(dueText(d.deadline, ""))}${d.open ? ' <span class="badge new">受付中</span>' : ""}</td>
+    </tr>`).join("");
+}
+
+function modeFromHash() {
+  const h = location.hash.replace("#", "");
+  return h === "taikai" || h === "shinsa" ? h : "hub";
+}
+
+/* 画面を mode に合わせる（タブの出し入れ・見出し・締め切り） */
+function applyMode() {
+  mode = modeFromHash();
+  const inHub = mode === "hub";
+  $("#tab-hub").classList.toggle("hidden", !inHub);
+  $("#tabs").classList.toggle("hidden", inHub);
+  $("#btn-menu").classList.toggle("hidden", inHub);
+  $$(".step").forEach((b) => b.classList.toggle("hidden", !b.dataset.modes.split(" ").includes(mode)));
+  renderTitle();
+  renderDue();
+  if (inHub) {
+    ["advisors", "members", "entry", "form", "shinsa", "sform"].forEach((t) =>
+      $("#tab-" + t).classList.add("hidden"));
+    currentTab = "hub";
+    updateSavebar();
+    return;
   }
-  el.textContent = text;
-  el.classList.remove("hidden");
+  const btn = $(`.step[data-tab="${currentTab}"]`);
+  const ok = btn && btn.dataset.modes.split(" ").includes(mode);
+  switchTab(ok ? currentTab : MODE_FIRST_TAB[mode]);
+}
+
+/* 未保存の入力があれば、画面を移る前に確かめる */
+function leaveOk() {
+  if (!entryDirty && !shinsaDirty) return true;
+  return confirm("保存していない変更があります。移ると消えます。よろしいですか？");
+}
+
+function goMode(m) {
+  if (!leaveOk()) return;
+  if (entryDirty || shinsaDirty) {
+    // 移るなら、未保存の入力は捨てて保存済みの内容で描き直す
+    renderEntry(); renderShinsa(); setDirty(false); setShinsaDirty(false);
+  }
+  location.hash = m === "hub" ? "" : m;   // hashchange で applyMode が走る
+  if (m === "hub") applyMode();
 }
 
 function renderSteps() {
@@ -156,6 +246,11 @@ function renderSteps() {
   const el = $("#st-form");
   el.textContent = up > 0 ? "提出済" : "未提出";
   el.classList.toggle("done", up > 0);
+  const sh = S.shinsa.round ? (S.shinsa.apps || []).length : 0;
+  set("#st-shinsa", sh, "名");
+  const sf = $("#st-sform");
+  sf.textContent = sh > 0 ? "作成できます" : "—";
+  sf.classList.toggle("done", false);
 }
 
 /* ---------- 1. 顧問 ---------- */
@@ -598,6 +693,198 @@ async function uploadForm() {
   }
 }
 
+/* ---------- 級位審査の申込 ----------
+   選択肢（区分・級・形・年月）はサーバーの shinsa.php が持っていて、S.shinsa.options で
+   届く。ここで選択肢を書き足さないこと（決まりを 2 か所に書かない） */
+
+function shOpt(list, current, label = (v) => v) {
+  return '<option value=""></option>' + list.map((v) =>
+    `<option value="${esc(v)}" ${String(v) === String(current ?? "") ? "selected" : ""}>${esc(label(v))}</option>`).join("");
+}
+
+function shKubun(id) {
+  return S.shinsa.options.kubun.find((k) => k.id === id);
+}
+
+function shinsaKubunList() {
+  // 形講習会・レベルチェックは第1回・第3回だけ（回の設定 lc。どの区分が該当かはサーバーの lc_round）
+  return S.shinsa.options.kubun.filter((k) => !k.lc_round || S.shinsa.round.lc);
+}
+
+function shinsaRow(a = {}) {
+  const tr = document.createElement("tr");
+  const o = S.shinsa.options;
+  const names = (S.members || []).map((m) => m.name);
+  const memberLabel = (n) => {
+    const m = (S.members || []).find((x) => x.name === n);
+    return m ? `${n}（${m.sex === "女子" ? "女" : "男"}・${m.grade}年）` : `${n}（名簿にありません）`;
+  };
+  // 名簿から消えた人も行は残す（保存するとエラーで知らせる）
+  const nameList = a.name && !names.includes(a.name) ? [a.name, ...names] : names;
+  const kubun = shinsaKubunList().map((k) => k.id);
+  if (a.kubun && !kubun.includes(a.kubun)) kubun.push(a.kubun);
+  const kyus = a.kubun && shKubun(a.kubun) ? shKubun(a.kubun).kyu : [];
+  tr.innerHTML = `
+    <td class="sh-no num"></td>
+    <td><select class="s-name">${shOpt(nameList, a.name, memberLabel)}</select></td>
+    <td><select class="s-kubun">${shOpt(kubun, a.kubun, (id) => (shKubun(id) || {}).label || id)}</select></td>
+    <td><select class="s-kyu" ${kyus.length ? "" : "disabled"}>${shOpt(kyus, a.kyu)}</select></td>
+    <td><select class="s-kata">${shOpt(o.kata, a.kata)}</select></td>
+    <td class="ym"><select class="s-years">${shOpt(o.years, a.years)}</select>年
+      <select class="s-months">${shOpt(o.months, a.months)}</select>か月</td>
+    <td class="del"><button class="mv up" title="上へ">↑</button><button class="mv dn" title="下へ">↓</button><button class="x" title="この行を外す">×</button></td>`;
+  tr.querySelector(".x").onclick = () => { tr.remove(); shinsaChanged(); };
+  tr.querySelector(".up").onclick = () => { if (tr.previousElementSibling) tr.parentNode.insertBefore(tr, tr.previousElementSibling); shinsaChanged(); };
+  tr.querySelector(".dn").onclick = () => { if (tr.nextElementSibling) tr.parentNode.insertBefore(tr.nextElementSibling, tr); shinsaChanged(); };
+  // 区分を変えたら、選べる級を入れ替える（レベルチェックは級・段）
+  tr.querySelector(".s-kubun").onchange = (e) => {
+    const k = shKubun(e.target.value);
+    const sel = tr.querySelector(".s-kyu");
+    const cur = sel.value;
+    sel.innerHTML = shOpt(k ? k.kyu : [], k && k.kyu.includes(cur) ? cur : "");
+    sel.disabled = !k;
+  };
+  return tr;
+}
+
+function renumberShinsa() {
+  $$("#sh-table tr").forEach((tr, i) => { tr.querySelector(".sh-no").textContent = i + 1; });
+  const n = $$("#sh-table .s-name").filter((s) => s.value !== "").length;
+  $("#sh-count").textContent = n ? `${n}名` : "";
+}
+
+function shinsaChanged() {
+  renumberShinsa();
+  setShinsaDirty(true);
+}
+
+function setShinsaDirty(v) {
+  shinsaDirty = v;
+  $("#sh-dirty").textContent = v ? "未保存の変更があります" : "";
+}
+
+function renderShinsa() {
+  const sh = S.shinsa;
+  const r = sh.round;
+  $("#sh-none").classList.toggle("hidden", !!r);
+  $("#sh-body").classList.toggle("hidden", !r);
+  if (!r) return;
+  $("#sh-aux").textContent = `審査期日 ${mdText(r.date)} ／ ${dueText(r.deadline)}`;
+  $("#sh-lc-hint").innerHTML = r.lc
+    ? "黒帯で<b>レベルチェックテスト</b>を受ける部員は「レベルチェックテスト（黒帯）」、審査は受けずに<b>形講習会だけ</b>出る部員は「形講習会のみ」を選びます（どちらも無料。形講習会のみの人は審査用紙を刷りません）。"
+    : "この回は形講習会・レベルチェックテストはありません（第1回・第3回だけ）。";
+  const tb = $("#sh-table");
+  tb.innerHTML = "";
+  (sh.apps || []).forEach((a) => tb.appendChild(shinsaRow(a)));
+  if (!tb.children.length && sh.can_edit) tb.appendChild(shinsaRow());
+  renumberShinsa();
+  const locked = !sh.can_edit;
+  $("#sh-locked").classList.toggle("hidden", !locked);
+  $("#sh-locked").textContent = locked
+    ? "締め切りを過ぎたため、申込は直せません。直す必要がある場合は審査部会へ連絡してください。" : "";
+  $$("#sh-table select, #sh-table button").forEach((el) => { if (locked) el.disabled = true; });
+  $("#sh-add").classList.toggle("hidden", locked);
+  $("#sh-save").classList.toggle("hidden", locked);
+}
+
+async function saveShinsa() {
+  const apps = $$("#sh-table tr").map((tr) => ({
+    name: tr.querySelector(".s-name").value,
+    kubun: tr.querySelector(".s-kubun").value,
+    kyu: tr.querySelector(".s-kyu").value,
+    kata: tr.querySelector(".s-kata").value,
+    years: tr.querySelector(".s-years").value,
+    months: tr.querySelector(".s-months").value,
+  })).filter((a) => a.name !== "" || a.kubun !== "" || a.kata !== "");
+  // 氏名だけ空の行は、黙って捨てずに知らせる
+  if (apps.some((a) => a.name === "")) {
+    showErrors("#sh-errors", { error: "氏名を選んでいない行があります（要らない行は × で外してください）" });
+    return;
+  }
+  const body = await api("shinsa_save", { round_id: S.shinsa.round.id, apps });
+  if (showErrors("#sh-errors", body.ok ? {} : body)) return;
+  await loadState();
+  flash("#sh-msg", "保存しました");
+}
+
+function renderSform() {
+  const sh = S.shinsa;
+  const r = sh.round;
+  $("#sf-none").classList.toggle("hidden", !!r);
+  $("#sf-body").classList.toggle("hidden", !r);
+  if (!r) return;
+  const apps = sh.apps || [];
+  const pages = sh.form_pages || 1;   // 1 枚に何人入るかはサーバーが決める
+  $("#sf-forms").innerHTML = !apps.length
+    ? '<span class="aux">先に「3. 審査申込」で申込を保存してください。</span>'
+    : Array.from({ length: pages }, (_, i) =>
+        `<a class="btn primary" href="api.php?action=shinsa_form&page=${i + 1}">申込書をダウンロード${pages > 1 ? `（${i + 1}枚目）` : ""}</a>`).join(" ")
+      + (pages > 1 ? '<span class="aux">　1 枚に 20 名まで入るので、2 枚に分かれます。</span>' : "");
+  // 審査用紙を刷るのは用紙のある区分だけ（形講習会のみの人は刷らない）
+  const withSheet = apps.filter((a) => (shKubun(a.kubun) || {}).sheet);
+  const sheet = $("#sf-sheets");
+  sheet.classList.toggle("hidden", !withSheet.length);
+  $("#sf-sheets-count").textContent = withSheet.length
+    ? `${withSheet.length}名 × 3枚 ＝ ${withSheet.length * 3}枚`
+      + (withSheet.length < apps.length ? `（形講習会のみの ${apps.length - withSheet.length} 名は刷りません）` : "")
+    : "";
+  const numbered = withSheet.length > 0 && withSheet.every((a) => a.no);
+  renderReceipts();
+  $("#sf-no-hint").textContent = !apps.length ? ""
+    : numbered ? "受審番号が振られています。番号も印字されます。"
+    : "受審番号は締め切りのあとに審査部会が振ります。番号が振られる前に印刷すると、番号の欄は空いたままになります（手で書いてもかまいません）。";
+}
+
+/* 領収書（審査部会が管理画面で出せるようにしてから）。合否は顧問が選ぶ。
+   受審料の金額と、どの区分に領収書を出すか（fee）はサーバーの shinsa.php が決める */
+const RESULT_OPTS = [["", "—"], ["pass", "合格"], ["fail", "不合格"], ["absent", "欠席"]];
+
+function renderReceipts() {
+  const sh = S.shinsa;
+  const r = sh.round;
+  const on = !!(r && r.receipt_on);
+  $("#rc-off").classList.toggle("hidden", on);
+  $("#rc-on").classList.toggle("hidden", !on);
+  $("#rc-aux").textContent = on ? `領収書の日付 ${mdText(r.receipt_date)}` : "";
+  if (!on) return;
+  const fee = sh.options.fee;
+  $("#rc-pass").textContent = fee.pass.toLocaleString();
+  $("#rc-fail").textContent = fee.fail.toLocaleString();
+  const feeOf = Object.fromEntries(sh.options.kubun.map((k) => [k.id, k.fee]));
+  const list = (sh.apps || []).filter((a) => feeOf[a.kubun]);
+  $("#rc-table").innerHTML = list.map((a) => `
+    <tr data-name="${esc(a.name)}">
+      <td>${esc(a.name)}</td>
+      <td>${esc(a.sex === "女子" ? "女子" : "男子")}${esc((shKubun(a.kubun) || {}).short || "")}</td>
+      <td>${RESULT_OPTS.map(([v, l]) => `<label style="margin-right:10px; white-space:nowrap">
+        <input type="radio" name="rc-${esc(a.name)}" value="${v}" ${(a.result || "") === v ? "checked" : ""}> ${l}</label>`).join("")}</td>
+    </tr>`).join("");
+  countReceipts();
+}
+
+function countReceipts() {
+  const picked = $$("#rc-table input[type=radio]:checked").map((i) => i.value);
+  const n = picked.filter((v) => v === "pass" || v === "fail").length;
+  const none = picked.filter((v) => v === "").length;
+  $("#rc-count").textContent = `領収書 ${n}枚` + (none ? `（まだ選んでいない人が ${none} 名）` : "");
+}
+
+async function printReceipts() {
+  const results = {};
+  $$("#rc-table tr").forEach((tr) => {
+    const c = tr.querySelector("input[type=radio]:checked");
+    results[tr.dataset.name] = c ? c.value : "";
+  });
+  // 押した瞬間にタブを開いておく（保存を待ってから開くと、ポップアップとして止められることがある）
+  const w = window.open("", "_blank");
+  const body = await api("shinsa_results", { round_id: S.shinsa.round.id, results });
+  if (showErrors("#rc-errors", body.ok ? {} : body)) { if (w) w.close(); return; }
+  if (w) w.location.href = "shinsa_receipt.html";
+  else location.href = "shinsa_receipt.html";
+  await loadState();
+  flash("#rc-msg", "保存しました");
+}
+
 /* ---------- 保存バー・未保存の管理 ---------- */
 
 function setDirty(v) {
@@ -608,7 +895,7 @@ function setDirty(v) {
 }
 
 function updateSavebar() {
-  const show = currentTab === "entry" && S && !!S.tournament;
+  const show = mode === "taikai" && currentTab === "entry" && S && !!S.tournament;
   $("#savebar").classList.toggle("hidden", !show);
 }
 
@@ -620,7 +907,7 @@ function switchTab(name) {
     if (b.dataset.tab === name) b.setAttribute("aria-current", "page");
     else b.removeAttribute("aria-current");
   });
-  ["advisors", "members", "entry", "form"].forEach((t) =>
+  ["advisors", "members", "entry", "form", "shinsa", "sform"].forEach((t) =>
     $("#tab-" + t).classList.toggle("hidden", t !== name));
   updateSavebar();
 }
@@ -629,7 +916,16 @@ window.addEventListener("DOMContentLoaded", async () => {
   $$(".step").forEach((b) => (b.onclick = () => switchTab(b.dataset.tab)));
   $("#btn-login").onclick = () => doLogin().catch((e) => showErrors("#login-error", { error: e.message }));
   $("#login-password").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#btn-login").click(); });
-  $("#btn-logout").onclick = doLogout;
+  $("#btn-logout").onclick = () => { if (leaveOk()) { setDirty(false); setShinsaDirty(false); doLogout(); } };
+  $("#btn-menu").onclick = () => goMode("hub");
+  $$(".hub-card").forEach((b) => (b.onclick = () => goMode(b.dataset.mode)));
+  window.addEventListener("hashchange", () => { if (S) applyMode(); });
+
+  $("#sh-add").onclick = () => { $("#sh-table").appendChild(shinsaRow()); shinsaChanged(); };
+  $("#sh-save").onclick = () => saveShinsa().catch((e) => showErrors("#sh-errors", { error: e.message }));
+  $("#tab-shinsa").addEventListener("change", () => shinsaChanged());
+  $("#rc-table").addEventListener("change", countReceipts);
+  $("#rc-print").onclick = () => printReceipts().catch((e) => showErrors("#rc-errors", { error: e.message }));
 
   $("#adv-add").onclick = () => $("#adv-table tbody").appendChild(advisorRow());
   $("#adv-save").onclick = () => saveAdvisors().catch((e) => showErrors("#adv-errors", { error: e.message }));
@@ -680,7 +976,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("#entry-discard").onclick = async () => { await loadState(); switchTab("entry"); };
 
   window.addEventListener("beforeunload", (e) => {
-    if (entryDirty) { e.preventDefault(); e.returnValue = ""; }
+    if (entryDirty || shinsaDirty) { e.preventDefault(); e.returnValue = ""; }
   });
 
   await initLogin().catch(() => {});

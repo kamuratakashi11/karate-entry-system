@@ -9,6 +9,7 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/uploads.php';
+require_once __DIR__ . '/shinsa.php';
 
 // 「人数制限」の画面から書き換えてよい項目。ここに無いものは受け取っても捨てる。
 // 個人種目は正と補欠が別のキーに分かれている（もとのデータの形に合わせてある）。
@@ -207,6 +208,7 @@ try {
                   'weak_password' => admin_password_is_weak(),
                   'status'      => collect_status($t),
                   'upload_groups' => upload_groups(),
+                  'shinsa_pw_set' => shinsa_admin_password_set(),
                   'tournament'  => $t]);
         }
 
@@ -292,6 +294,43 @@ try {
             if (!reset_school_password($sid, $pw)) {
                 afail('その学校がありません');
             }
+            aout(['ok' => true]);
+        }
+
+        // ---- 年間の締め切り（3 月に 1 年分を入れる。孝さん 2026-10-14） ----
+        // 大会ごとの締め切り（tournaments[大会]['deadline']）をまとめて書く。受付中かどうかは変えない。
+        // 先生方のメニューの「これからの締め切り」に、過ぎていないものが近い順に出る
+        case 'admin_set_deadlines': {
+            require_admin();
+            $ts = (array)config_get('tournaments', []);
+            $errors = [];
+            foreach ((array)($in['deadlines'] ?? []) as $tid => $d) {
+                $d = trim((string)$d);
+                if (!isset($ts[$tid])) {
+                    continue;
+                }
+                if ($d !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) {
+                    $errors[] = ($ts[$tid]['name'] ?? $tid) . ': 締め切りの日付を選んでください';
+                    continue;
+                }
+                $ts[$tid]['deadline'] = $d;
+            }
+            if ($errors) {
+                aout(['ok' => false, 'errors' => $errors], 422);
+            }
+            db()->prepare('INSERT OR REPLACE INTO config VALUES (?,?)')
+                ->execute(['tournaments', json_encode($ts, JSON_UNESCAPED_UNICODE)]);
+            aout(['ok' => true]);
+        }
+
+        // ---- 級位審査の管理画面のパスワード（審査担当の先生に渡す。専門部が決める） ----
+        case 'admin_set_shinsa_password': {
+            require_admin();
+            $pw = (string)($in['password'] ?? '');
+            if (mb_strlen($pw) < 8) {
+                afail('パスワードは8文字以上にしてください');
+            }
+            set_shinsa_admin_password($pw);
             aout(['ok' => true]);
         }
 

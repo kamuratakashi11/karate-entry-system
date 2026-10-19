@@ -21,9 +21,11 @@ final class XlsxFill
 
     /**
      * @param array<string,string> $cells 'E3' => '値' の連想配列
+     * @param ?string $sheetName 書き込むシートの名前。省略すると先頭のシート
+     *        （級位審査の申込書は 2 枚目の「受審申込書 」に書く。1 枚目は注意事項）
      * @return array<string,string> 実際に書いたセル（結合の付け替え後の参照 => 値）。検証用
      */
-    public static function fill(string $templatePath, string $outPath, array $cells): array
+    public static function fill(string $templatePath, string $outPath, array $cells, ?string $sheetName = null): array
     {
         if (!is_file($templatePath)) {
             throw new RuntimeException("テンプレートが見つからない: {$templatePath}（アップロード漏れ・名前違いを確認）");
@@ -41,7 +43,7 @@ final class XlsxFill
             throw new RuntimeException("zipとして開けない: {$outPath}");
         }
         try {
-            $sheetPath = self::firstSheetPath($zip);
+            $sheetPath = self::firstSheetPath($zip, $sheetName);
             $xml = $zip->getFromName($sheetPath);
             if ($xml === false) {
                 throw new RuntimeException("シートが見つからない: {$sheetPath}");
@@ -136,8 +138,8 @@ final class XlsxFill
         return [$m[1], (int)$m[2]];
     }
 
-    /** ブックの先頭シートの zip 内パス（例 xl/worksheets/sheet1.xml） */
-    private static function firstSheetPath(ZipArchive $zip): string
+    /** ブックの先頭シート（名前を渡せばそのシート）の zip 内パス（例 xl/worksheets/sheet1.xml） */
+    private static function firstSheetPath(ZipArchive $zip, ?string $name = null): string
     {
         $wbXml = $zip->getFromName('xl/workbook.xml');
         $relXml = $zip->getFromName('xl/_rels/workbook.xml.rels');
@@ -147,8 +149,17 @@ final class XlsxFill
         $wb = new DOMDocument();
         $wb->loadXML($wbXml);
         $sheet = $wb->getElementsByTagNameNS(self::NS, 'sheet')->item(0);
+        if ($name !== null) {
+            $sheet = null;
+            foreach ($wb->getElementsByTagNameNS(self::NS, 'sheet') as $sh) {
+                if ($sh->getAttribute('name') === $name) {
+                    $sheet = $sh;
+                    break;
+                }
+            }
+        }
         if (!$sheet) {
-            throw new RuntimeException('シート定義が無い');
+            throw new RuntimeException($name === null ? 'シート定義が無い' : "シートが無い: {$name}");
         }
         $rid = $sheet->getAttributeNS(self::NS_REL, 'id');
         $rels = new DOMDocument();

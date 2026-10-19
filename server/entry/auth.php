@@ -24,6 +24,14 @@ function entry_session_start(): void
     session_start();
 }
 
+/** パスワードを pbkdf2_sha256$反復$salt$hash の形にする（学校・管理者・審査の管理者で共通） */
+function make_password_hash(string $plain): string
+{
+    $salt = random_bytes(16);
+    $hash = hash_pbkdf2('sha256', $plain, $salt, 100000, 0, true);
+    return 'pbkdf2_sha256$100000$' . bin2hex($salt) . '$' . bin2hex($hash);
+}
+
 function verify_password(string $plain, string $stored): bool
 {
     $p = explode('$', $stored);
@@ -117,9 +125,7 @@ function admin_password_is_weak(): bool
 
 function set_admin_password(string $plain): void
 {
-    $salt = random_bytes(16);
-    $hash = hash_pbkdf2('sha256', $plain, $salt, 100000, 0, true);
-    $stored = 'pbkdf2_sha256$100000$' . bin2hex($salt) . '$' . bin2hex($hash);
+    $stored = make_password_hash($plain);
     db()->prepare('INSERT OR REPLACE INTO config VALUES (?,?)')
         ->execute(['admin_password', json_encode($stored, JSON_UNESCAPED_UNICODE)]);
 }
@@ -153,9 +159,7 @@ function require_admin(): void
 /** 学校のパスワードを作り直す（管理者用） */
 function reset_school_password(string $schoolId, string $plain): bool
 {
-    $salt = random_bytes(16);
-    $hash = hash_pbkdf2('sha256', $plain, $salt, 100000, 0, true);
-    $stored = 'pbkdf2_sha256$100000$' . bin2hex($salt) . '$' . bin2hex($hash);
+    $stored = make_password_hash($plain);
     $st = db()->prepare('UPDATE schools SET password_hash = ? WHERE school_id = ?');
     $st->execute([$stored, $schoolId]);
     return $st->rowCount() > 0;

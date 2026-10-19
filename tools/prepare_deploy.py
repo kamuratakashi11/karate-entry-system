@@ -42,42 +42,65 @@ DEADLINE = "2026-09-25"
 
 APP_FILES = ["index.html", "style.css", "app.js", "api.php",
              "auth.php", "db.php", "config.php", "uploads.php", "setup.php",
-             "admin.html", "admin_api.php"]
+             "admin.html", "admin_api.php",
+             # 級位審査（2026-10-14）。地紙 shinsa/*.png（審査用紙・領収書）は SUBDIRS で運ぶ
+             "shinsa.php", "shinsa_print.html", "shinsa_print.js",
+             "shinsa_receipt.html", "shinsa_receipt.js", "shinsa_day.php",
+             "shinsa_admin.html", "shinsa_admin.js", "shinsa_admin_api.php"]
 # lib/ は中身をまるごと運ぶ（大会ごとのテンプレート・座標が増えるため列挙しない）
 
 # 上げ直し（--update）で運ぶもの。setup.php は初回だけの道具なので入れない
-# （DBを動かすものを毎回上げると、要らない事故の芽になる）。lib/ は申込書の
-# テンプレート・座標なので、そこを直したときだけ手で上げる
+# （DBを動かすものを毎回上げると、要らない事故の芽になる）
 UPDATE_FILES = [f for f in APP_FILES if f != "setup.php"]
+
+# 上げ直しでフォルダごと運ぶもの。lib/ は申込書の型・座標・Excel の書き手で、
+# 正はこのリポジトリ（2026-10-19 から毎回まるごと運ぶ。手で選ぶと上げ忘れが出るため。
+# 計量チェック表の weigh_sheet.php・表の書き手 xlsx_book.php・審査の申込書の型が増えた）。
+# shinsa/ は級位審査の審査用紙と領収書の地紙
+SUBDIRS = ["lib", "shinsa"]
 
 TEJUN_UPDATE = """申込窓口（/entry/）のプログラムを上げ直す手順
 ==============================================
 
 データベース（名簿・エントリー）と、提出された申込書には触れません。
-先生方が入力中でも安全です。
+先生方が入力中でも安全です（級位審査の表は、最初に開かれたときに自動で足されます）。
 
 1. さくらのファイルマネージャーで www\\entry を開く
 
-2. deploy_update\\www_entry の中身（{n_files}個）を、www\\entry へアップロードする（上書き）
-   ・「lib」フォルダは触らなくて構いません
+2. 先にフォルダの中身を上げる
+   ・deploy_update\\www_entry\\lib の中身（{n_lib}個）を、www\\entry\\lib へ（上書き）
+   ・www\\entry の中に「shinsa」フォルダを作り（初回だけ）、
+     deploy_update\\www_entry\\shinsa の中身（{n_shinsa}個）を入れる
 
-3. 使わなくなったファイルを消す（残っていれば）
-   ・www\\entry\\check.php     … 設置直後の点検用。もう上げていません
-   ・www\\entry\\setup.php     … 最初の設置専用
-   ・www\\draw\\envcheck.php と envcheck.cgi … サーバーの環境調べ用（役目を終えた）
+3. 次に deploy_update\\www_entry の中のファイル（{n_files}個）を、www\\entry へ（上書き）
+   ・db.php・auth.php・shinsa.php を先に、残りをそのあとに上げると、
+     途中で画面が止まる時間がいちばん短くなります
 
 4. 管理画面で確かめる
    https://saitamahs-karate.sakura.ne.jp/entry/admin.html
-   → 受付状況の学校名にマウスを乗せると下線が出る。ダブルクリックすると
-     別のタブでその学校の申込画面が開き、上に「管理者として…操作しています」の帯
-   → 学校の画面の右上「管理画面に戻る」で戻れる
+   → 「データ出力」に「計量チェック表（Excel）」がある
+   → 「大会設定」の下に「年間の締め切り」と「級位審査の管理画面」がある
+     ・級位審査の管理画面のパスワードを決める（審査担当の先生に渡す）
+     ・年間の締め切り（大会）を入れておくと、先生方のメニューに出ます
 
-■ 今回の変更（2026-09-29）
+5. 級位審査の管理画面で、回を登録する
+   https://saitamahs-karate.sakura.ne.jp/entry/shinsa_admin.html
+   （専門部の管理画面にログインしていれば、パスワードなしで入れます）
+   → 年度・回・審査期日・申込の締め切りを入れ、受付を始める回の「学校に見せる」に印 → 保存
 
-  ・受付状況の学校名をダブルクリックすると、その学校として申込画面に入り、
-    登録の間違いを直せる（学校のパスワードは要らない）
-  ・データ出力の「集計（CSV）」と「従来の調整画面」のボタンを外した（使っていない）
-  ・「抽選用データ」の説明を直した（団体戦のチームは補欠を含む）
+6. 先生の画面で確かめる
+   https://saitamahs-karate.sakura.ne.jp/entry/
+   → ログインすると「大会申込」「級位審査申込」を選ぶメニューが出る
+   → 大会申込は今までと同じ画面
+
+■ 今回の変更（2026-10-19）
+
+  ・級位審査の申込（ログインのあとのメニューで選ぶ）: 部員名簿から申し込む・
+    紙の申込書（審査部会の様式の Excel・校長印を押して提出）・審査用紙（1 人 3 枚）・
+    領収書（審査のあと、審査部会が出せるようにしてから顧問が合否を選んで印刷）
+  ・級位審査の管理画面（別のパスワード）: 1 年分の回・受審番号・当日用の Excel・領収書の ON/OFF
+  ・専門部の管理画面: 年間の締め切り・級位審査の管理画面のパスワード
+  ・計量チェック表（Excel。個人組手の階級ごとに 1 枚）
 """
 
 TEJUN = """申込窓口（/entry/）をさくらに置く手順
@@ -144,8 +167,8 @@ DBを置く「www の外」のフォルダは、setup.php がブラウザから�
 
 
 # HTML から読み込まれる資材。中身が変わったら URL も変える対象
-ASSETS = ["style.css", "app.js"]
-HTML_FILES = ["index.html", "admin.html"]
+ASSETS = ["style.css", "app.js", "shinsa_print.js", "shinsa_receipt.js", "shinsa_admin.js"]
+HTML_FILES = ["index.html", "admin.html", "shinsa_print.html", "shinsa_receipt.html", "shinsa_admin.html"]
 
 
 def stamp_versions(www: Path) -> None:
@@ -188,10 +211,18 @@ def build_update() -> None:
     for f in UPDATE_FILES:
         shutil.copy(src / f, www / f)
     stamp_versions(www)
+    counts = {}
+    for d in SUBDIRS:
+        (www / d).mkdir()
+        sub = sorted(p for p in (src / d).iterdir() if p.is_file())
+        for p in sub:
+            shutil.copy(p, www / d / p.name)
+        counts[d] = len(sub)
 
     files = sorted(p.name for p in www.iterdir() if p.is_file())
     (UPDATE / "手順.txt").write_text(
-        TEJUN_UPDATE.format(n_files=len(files)), encoding="cp932")
+        TEJUN_UPDATE.format(n_files=len(files), n_lib=counts["lib"], n_shinsa=counts["shinsa"]),
+        encoding="cp932")
 
     print(f"できた: {UPDATE}")
     print(f"  www_entry: {len(files)}ファイル（DBは入れていません）")

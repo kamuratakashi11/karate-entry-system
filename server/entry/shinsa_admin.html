@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>級位審査の管理</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* 審査の管理画面だけの追加（大会の管理画面 admin.html と同じ見た目にそろえる） */
+  .sum { display:flex; gap:10px; flex-wrap:wrap; margin:12px 0 0; }
+  .card-n { flex:1 1 130px; background:var(--surface); border:1px solid var(--line-soft);
+            border-left:3px solid var(--accent); border-radius:var(--radius); padding:7px 11px; }
+  .card-n .lbl { font-size:11.5px; color:var(--ink-3); letter-spacing:.06em; }
+  .card-n .v { font-size:21px; font-weight:600; line-height:1.3; }
+  .card-n .v small { font-size:12px; font-weight:normal; color:var(--ink-3); margin-left:3px; }
+  table.st { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
+  table.st th, table.st td { border-bottom:1px solid var(--line-soft); padding:4px 7px; text-align:left; }
+  table.st thead th { background:var(--surface-2); font-size:11.5px; color:var(--ink-3);
+                      letter-spacing:.06em; border-bottom:1px solid var(--line); white-space:nowrap; }
+  table.st td.c, table.st th.c { text-align:center; }
+  table.st tbody tr:hover { background:var(--surface-2); }
+  table.st tr.sel td { background:var(--accent-bg); }
+  table.st tfoot td { font-weight:600; border-top:1px solid var(--line); }
+  tr.none td { color:var(--ink-3); }
+  .tblwrap { overflow-x:auto; }
+  .rowform { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+  .rowform input, .rowform select { width:auto; }
+  table.rounds input[type=number] { width:4em; }
+  table.rounds input[type=date] { width:auto; }
+  .tag { display:inline-block; font-size:11px; padding:0 7px; border-radius:999px;
+         border:1px solid var(--line-soft); background:var(--surface-2); color:var(--ink-3); }
+  .tag.on { background:var(--ok-bg); color:var(--ok); border-color:transparent; }
+  .tag.warn { background:var(--warn-bg); color:var(--warn); border-color:transparent; }
+  .zero { color:var(--ink-3); }
+  .steps3 { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-top:12px; }
+  @media (max-width:860px){ .steps3 { grid-template-columns:1fr; } }
+  .stepcard { background:var(--surface); border:1px solid var(--line-soft); border-radius:var(--radius);
+              padding:12px 14px; display:flex; flex-direction:column; gap:6px; }
+  .stepcard h3 { margin:0; font-size:14px; }
+  .stepcard h3 .when { font-weight:normal; font-size:11.5px; color:var(--ink-3); margin-left:6px; }
+  .stepcard p { margin:0; font-size:12.5px; color:var(--ink-2); }
+  .stepcard .btn { align-self:flex-start; }
+  .switch { display:inline-flex; align-items:center; gap:8px; font-weight:600; }
+  .asadmin { font-size:12px; color:var(--ink-3); }
+</style>
+</head>
+<body>
+
+<div id="view-login" class="hidden">
+  <div class="login-wrap">
+    <div class="login-card">
+      <p class="kicker">埼玉県高体連 空手道専門部 審査部会</p>
+      <h1>級位審査の管理</h1>
+      <label>パスワード
+        <input type="password" id="pw" autocomplete="current-password">
+      </label>
+      <div id="login-error" class="errbox hidden"></div>
+      <button id="btn-login" class="btn primary">ログイン</button>
+      <p class="note">審査担当の先生用です。学校の先生用の画面は <a href="./">こちら</a>。</p>
+    </div>
+  </div>
+</div>
+
+<div id="view-app" class="hidden">
+<div class="wrap">
+  <header class="top">
+    <p class="kicker">大会申込システム ｜ 級位審査の管理（審査部会）</p>
+    <h1>級位審査の管理</h1>
+    <div class="facts">
+      <span class="asadmin hidden" id="asadmin">専門部の管理者として入っています</span>
+      <a id="btn-pw">パスワード変更</a>
+      <a id="btn-logout">ログアウト</a>
+    </div>
+  </header>
+
+  <div class="pane hidden" id="pw-pane" style="margin-top:14px">
+    <div class="rowform">
+      <input type="password" id="new-pw" placeholder="新しいパスワード（8文字以上）" size="28">
+      <button class="btn" id="pw-save">変更</button>
+      <span id="pw-msg" class="okmsg"></span>
+    </div>
+    <div id="pw-errors" class="errbox hidden"></div>
+  </div>
+
+  <!-- 1. 回（1 年分） -->
+  <section class="blk">
+    <div class="blk-head"><span class="no">1</span><h2>審査の回</h2>
+      <span class="aux">年度末（3 月）に、次の年度の 3 回分をまとめて登録します</span></div>
+    <div class="pane" style="margin-top:12px">
+      <div class="tblwrap">
+        <table class="st rounds">
+          <thead><tr><th>年度</th><th>回</th><th>審査期日</th><th>申込の締め切り</th>
+            <th class="c">形講習・<br>レベルチェック</th><th class="c">学校に<br>見せる</th>
+            <th class="c">申込</th><th></th></tr></thead>
+          <tbody id="r-body"></tbody>
+        </table>
+      </div>
+      <div class="rowform" style="margin-top:10px">
+        <button class="addrow" id="r-add-year" style="margin:0">＋ 1 年分（3 回）を足す</button>
+        <button class="addrow" id="r-add" style="margin:0">＋ 1 回を足す</button>
+        <span style="flex:1"></span>
+        <span id="r-msg" class="okmsg"></span>
+        <button class="btn primary" id="r-save">回の設定を保存</button>
+      </div>
+      <p class="hint">「学校に見せる」に印を付けた回が、先生方の申込画面に出ます。
+        締め切りの日を過ぎると、先生方は申込を直せなくなります（審査用紙の印刷はできます）。
+        形講習会・レベルチェックテストは第 1 回・第 3 回だけです。申込のある回は消せません。</p>
+    </div>
+    <div id="r-errors" class="errbox hidden"></div>
+  </section>
+
+  <!-- 2. 選んだ回 -->
+  <section class="blk" id="d-sec">
+    <div class="blk-head"><span class="no">2</span><h2 id="d-title">—</h2>
+      <span class="aux" id="d-aux"></span></div>
+    <div id="d-none" class="notice hidden">上の表で、見る回の「開く」を押してください。</div>
+    <div id="d-body">
+      <div class="sum" id="d-sum"></div>
+
+      <div class="steps3">
+        <div class="stepcard">
+          <h3>① 受審番号を振る<span class="when">締め切りのあと</span></h3>
+          <p>上級は男女別に、<b>各校の 1 人目 → 2 人目 → …</b>の順（自由組手で 1 番どうしが当たる）。
+            初級とレベルチェックは学校番号順・申込書の順。組ごとに 1 番から振ります（形講習会のみの人には振りません）。</p>
+          <p id="n-status"></p>
+          <button class="btn primary" id="n-run">受審番号を振る</button>
+          <span id="n-msg" class="okmsg"></span>
+        </div>
+        <div class="stepcard">
+          <h3>② 当日用の Excel<span class="when">審査の前</span></h3>
+          <p>受付名簿（出欠の欄つき）・上級集計・初級集計（点を入れると合格級が出る）・受審順（掲示）・形講習・レベルチェック。
+            会場では、この Excel で出欠と点数を付けます。</p>
+          <a class="btn primary" id="x-day" href="#">当日用の Excel をダウンロード</a>
+        </div>
+        <div class="stepcard">
+          <h3>③ 領収書<span class="when">審査のあと</span></h3>
+          <p>出せるようにすると、顧問の画面に領収書が出ます。顧問が合否を選んで印刷し、本人に渡します
+            （<span id="rc-fee"></span>。欠席とレベルチェックは出しません）。</p>
+          <div class="rowform">
+            <label class="aux">領収書の日付 <input type="date" id="rc-date"></label>
+          </div>
+          <div class="rowform">
+            <span class="switch"><span class="tag" id="rc-state">止めています</span></span>
+            <button class="btn" id="rc-toggle">出せるようにする</button>
+            <span id="rc-msg" class="okmsg"></span>
+          </div>
+        </div>
+      </div>
+      <div id="d-errors" class="errbox hidden"></div>
+
+      <div class="pane" style="margin-top:14px">
+        <h3>学校ごとの申込 <span class="cnt" id="st-count"></span></h3>
+        <label class="aux"><input type="checkbox" id="only-applied"> 申込のある学校だけ</label>
+        <div class="tblwrap">
+          <table class="st">
+            <thead><tr><th>学校</th><th class="c">上級 女</th><th class="c">上級 男</th>
+              <th class="c">初級 女</th><th class="c">初級 男</th><th class="c">レベル<br>チェック</th><th class="c">形講習<br>のみ</th>
+              <th class="c">計</th><th class="c">受審番号</th><th class="c">領収書</th></tr></thead>
+            <tbody id="st-body"></tbody>
+            <tfoot id="st-foot"></tfoot>
+          </table>
+        </div>
+        <p class="hint">申込の中身（氏名・形など）は「当日用の Excel」の受付名簿で見られます。
+          学校の申込を直すときは、専門部の管理画面から、その学校として入って直します。</p>
+      </div>
+    </div>
+  </section>
+</div>
+</div>
+
+<script src="shinsa_admin.js"></script>
+</body>
+</html>

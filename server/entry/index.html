@@ -42,15 +42,42 @@
     <div class="facts">
       <span>学校 <b id="hd-school"></b></span>
       <span class="due hidden" id="hd-due"></span>
+      <a id="btn-menu" class="hidden">メニューに戻る</a>
       <a id="btn-logout">ログアウト</a>
     </div>
   </header>
 
-  <nav class="steps" id="tabs" aria-label="申込の手順">
-    <button class="step" data-tab="advisors"><span>1. 顧問登録</span><span class="st" id="st-adv">—</span></button>
-    <button class="step" data-tab="members"><span>2. 部員名簿</span><span class="st" id="st-mem">—</span></button>
-    <button class="step" data-tab="entry"><span>3. 大会エントリー</span><span class="st" id="st-ent">—</span></button>
-    <button class="step" data-tab="form"><span>4. 申込書</span><span class="st" id="st-form">—</span></button>
+  <!-- ログインのあとに選ぶ（大会申込／級位審査申込）。名簿と顧問は両方で同じものを使う -->
+  <section id="tab-hub" class="hidden">
+    <div class="hub">
+      <button class="hub-card" data-mode="taikai">
+        <span class="hub-kind">大会申込</span>
+        <b class="hub-name" id="hub-taikai-name">—</b>
+        <span class="hub-due" id="hub-taikai-due"></span>
+      </button>
+      <button class="hub-card" data-mode="shinsa">
+        <span class="hub-kind">級位審査申込</span>
+        <b class="hub-name" id="hub-shinsa-name">—</b>
+        <span class="hub-due" id="hub-shinsa-due"></span>
+      </button>
+    </div>
+    <section class="blk">
+      <div class="blk-head"><h2>これからの締め切り</h2>
+        <span class="aux">大会と級位審査の締め切りを近い順に</span></div>
+      <div class="pane" style="margin-top:12px">
+        <table class="grid dl"><tbody id="dl-list"></tbody></table>
+        <div id="dl-none" class="offnote hidden">登録されている締め切りはありません。</div>
+      </div>
+    </section>
+  </section>
+
+  <nav class="steps hidden" id="tabs" aria-label="申込の手順">
+    <button class="step" data-tab="advisors" data-modes="taikai shinsa"><span>1. 顧問登録</span><span class="st" id="st-adv">—</span></button>
+    <button class="step" data-tab="members" data-modes="taikai shinsa"><span>2. 部員名簿</span><span class="st" id="st-mem">—</span></button>
+    <button class="step" data-tab="entry" data-modes="taikai"><span>3. 大会エントリー</span><span class="st" id="st-ent">—</span></button>
+    <button class="step" data-tab="form" data-modes="taikai"><span>4. 申込書</span><span class="st" id="st-form">—</span></button>
+    <button class="step" data-tab="shinsa" data-modes="shinsa"><span>3. 審査申込</span><span class="st" id="st-shinsa">—</span></button>
+    <button class="step" data-tab="sform" data-modes="shinsa"><span>4. 申込書・審査用紙</span><span class="st" id="st-sform">—</span></button>
   </nav>
 
   <!-- 1. 顧問 -->
@@ -251,6 +278,82 @@
         <div id="up-none" class="offnote">まだ提出されていません。</div>
       </div>
     </section>
+  </section>
+
+  <!-- 3. 級位審査の申込 -->
+  <section id="tab-shinsa" class="hidden">
+    <div id="sh-none" class="hidden"><p class="notice">現在、受付中の級位審査はありません。</p></div>
+    <div id="sh-body">
+      <section class="blk">
+        <div class="blk-head"><span class="no">3</span><h2>審査を受ける部員</h2>
+          <span class="aux" id="sh-aux"></span></div>
+        <div id="sh-locked" class="notice hidden"></div>
+        <div class="pane" style="margin-top:12px">
+          <div class="tscroll">
+          <table class="grid shinsa">
+            <thead><tr><th style="width:2.6em">No.</th><th style="width:13em">氏名</th><th>区分</th>
+              <th style="width:6em">現在の級</th><th style="width:11.5em">演武する形</th>
+              <th style="width:10em">通算修業期間</th><th style="width:5.5em"></th></tr></thead>
+            <tbody id="sh-table"></tbody>
+          </table>
+          </div>
+          <button id="sh-add" class="addrow">＋ 部員を追加</button>
+          <span class="cnt" id="sh-count"></span>
+        </div>
+        <p class="hint">氏名は「2. 部員名簿」から選びます。<b>JKF 番号（全空連会員番号）</b>が名簿に無い部員は受審できません。
+          並び順がそのまま申込書の No. になります（審査は各校の 1 番どうし、2 番どうし…の順で組手をします）。</p>
+        <p class="hint" id="sh-lc-hint"></p>
+        <div id="sh-errors" class="errbox hidden"></div>
+        <p><button id="sh-save" class="btn primary">申込を保存</button>
+          <span id="sh-dirty" class="aux"></span> <span id="sh-msg" class="okmsg"></span></p>
+      </section>
+    </div>
+  </section>
+
+  <!-- 4. 級位審査の申込書と審査用紙 -->
+  <section id="tab-sform" class="hidden">
+    <div id="sf-none" class="hidden"><p class="notice">現在、受付中の級位審査はありません。</p></div>
+    <div id="sf-body">
+      <section class="blk">
+        <div class="blk-head"><span class="no">4.1</span><h2>申込書（校長印を押して提出）</h2></div>
+        <div class="pane" style="margin-top:12px">
+          <p style="margin:4px 0 10px">保存した申込の内容で、審査部会の様式（Excel）を作ります。
+            印刷して<b>校長印（職印）</b>を押し、審査部会へ提出してください。</p>
+          <p style="margin:0 0 6px" id="sf-forms"></p>
+          <p class="hint">引率顧問名の欄は、当日来られる顧問の名前を手で書いてください。</p>
+        </div>
+      </section>
+      <section class="blk">
+        <div class="blk-head"><span class="no">4.2</span><h2>審査用紙（当日持っていく）</h2></div>
+        <div class="pane" style="margin-top:12px">
+          <p style="margin:4px 0 10px">1 人につき <b>3 枚</b>（審査員 3 人ぶん）を印刷します。
+            氏名・学校・学年・現在の級・形が入った状態で出ます。</p>
+          <p style="margin:0 0 6px"><a class="btn primary" id="sf-sheets" href="shinsa_print.html" target="_blank" rel="noopener">審査用紙を印刷する</a>
+            <span class="aux" id="sf-sheets-count"></span></p>
+          <p class="hint" id="sf-no-hint"></p>
+        </div>
+      </section>
+      <section class="blk" id="rc-sec">
+        <div class="blk-head"><span class="no">4.3</span><h2>領収書（審査のあと）</h2>
+          <span class="aux" id="rc-aux"></span></div>
+        <div id="rc-off" class="pane" style="margin-top:12px">
+          <p class="offnote" style="margin:0">審査が終わると、審査部会がここから領収書を出せるようにします。</p>
+        </div>
+        <div id="rc-on" class="pane hidden" style="margin-top:12px">
+          <p style="margin:4px 0 10px">審査の結果に合わせて、1 人ずつ選んでください。
+            <b>合格は <span id="rc-pass"></span> 円、不合格は <span id="rc-fail"></span> 円</b>の領収書になります。
+            欠席の人には出しません（形講習・レベルチェックは無料なので、ここには出ません）。</p>
+          <table class="grid" style="max-width:560px">
+            <thead><tr><th>氏名</th><th style="width:7em">区分</th><th style="width:15em">結果</th></tr></thead>
+            <tbody id="rc-table"></tbody>
+          </table>
+          <div id="rc-errors" class="errbox hidden"></div>
+          <p style="margin-top:12px"><button class="btn primary" id="rc-print">保存して領収書を印刷する</button>
+            <span class="aux" id="rc-count"></span> <span id="rc-msg" class="okmsg"></span></p>
+          <p class="hint">印刷した領収書は、切り離して本人に渡してください（A4 1 枚に 2 人分）。選び直して何度でも刷れます。</p>
+        </div>
+      </section>
+    </div>
   </section>
 
 </div>

@@ -238,6 +238,43 @@
       <div id="lim-errors" class="errbox hidden"></div>
     </section>
     <section class="blk">
+      <div class="blk-head"><h2>年間の締め切り</h2>
+        <span class="aux">年度末に、次の年度の大会の締め切りをまとめて入れます</span></div>
+      <div class="pane" style="margin-top:12px">
+        <div class="tblwrap">
+          <table class="st" id="dl-table">
+            <thead><tr><th>大会</th><th>申込の締め切り</th><th class="c">受付</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="rowform" style="margin-top:10px">
+          <button class="btn primary" id="dl-save">締め切りを保存</button>
+          <span id="dl-msg" class="okmsg"></span>
+        </div>
+        <p class="hint">先生方がログインしたあとのメニューに、級位審査の締め切りと一緒に「これからの締め切り」として近い順に出ます
+          （過ぎたものは出ません）。受付を始める大会は、上の「受付中の大会」で選びます。
+          級位審査の回と締め切りは、<a href="shinsa_admin.html" target="_blank" rel="noopener">級位審査の管理画面</a>で入れます。</p>
+      </div>
+      <div id="dl-errors" class="errbox hidden"></div>
+    </section>
+    <section class="blk">
+      <div class="blk-head"><h2>級位審査の管理画面</h2>
+        <span class="aux">審査担当の先生に渡すパスワード</span></div>
+      <div class="pane" style="margin-top:12px">
+        <p style="margin:4px 0 8px">審査の回の登録・受審番号・当日用の Excel・領収書は
+          <a href="shinsa_admin.html" target="_blank" rel="noopener">級位審査の管理画面</a> で行います
+          （この管理画面にログインしていれば、パスワードなしで入れます）。
+          <span class="tag" id="sh-pw-state">—</span></p>
+        <div class="rowform">
+          <input type="password" id="sh-pw" placeholder="新しいパスワード（8文字以上）" size="28">
+          <button class="btn" id="sh-pw-save">決める</button>
+          <span id="sh-pw-msg" class="okmsg"></span>
+        </div>
+        <p class="hint">審査担当の先生は、このパスワードで級位審査の管理画面だけに入れます（大会の申込は見えません）。</p>
+      </div>
+      <div id="sh-pw-errors" class="errbox hidden"></div>
+    </section>
+    <section class="blk">
       <div class="blk-head"><h2>管理者パスワード</h2></div>
       <div class="pane" style="margin-top:12px">
         <div class="rowform">
@@ -482,6 +519,13 @@ function renderSettings() {
     Object.entries(A.tournaments).map(([tid, t]) =>
       `<option value="${esc(tid)}" ${tid === A.active ? "selected" : ""}>${esc(t.name)}</option>`).join("");
   $("#set-deadline").value = (A.tournament && A.tournament.deadline) || "";
+  // 年間の締め切り（大会ごと）
+  $("#dl-table tbody").innerHTML = Object.entries(A.tournaments).map(([tid, t]) => `
+    <tr data-tid="${esc(tid)}"><td>${esc(t.name)}</td>
+      <td><input type="date" class="dl-d" value="${esc(t.deadline || "")}"></td>
+      <td class="c">${tid === A.active ? '<span class="tag on">受付中</span>' : ""}</td></tr>`).join("");
+  $("#sh-pw-state").textContent = A.shinsa_pw_set ? "パスワードは決めてあります" : "まだ決めていません";
+  $("#sh-pw-state").classList.toggle("on", !!A.shinsa_pw_set);
 }
 
 // 人数制限の表。どの設定を触るかは種目ごとに違う（もとのデータの形に合わせてある）。
@@ -583,6 +627,18 @@ window.addEventListener("DOMContentLoaded", async () => {
     const b = await api("admin_set_limits", { tournament_id: $("#lim-tid").value, limits });
     if (showErrors("#lim-errors", b.ok ? {} : b)) return;
     flash("#lim-msg", "保存しました"); await load();
+  };
+  $("#dl-save").onclick = async () => {
+    const deadlines = {};
+    $$("#dl-table tbody tr").forEach((tr) => { deadlines[tr.dataset.tid] = tr.querySelector(".dl-d").value; });
+    const b = await api("admin_set_deadlines", { deadlines });
+    if (showErrors("#dl-errors", b.ok ? {} : b)) return;
+    flash("#dl-msg", "保存しました"); await load();
+  };
+  $("#sh-pw-save").onclick = async () => {
+    const b = await api("admin_set_shinsa_password", { password: $("#sh-pw").value });
+    if (showErrors("#sh-pw-errors", b.ok ? {} : b)) return;
+    $("#sh-pw").value = ""; flash("#sh-pw-msg", "決めました"); await load();
   };
   $("#adm-save").onclick = async () => {
     const b = await api("admin_set_password", { password: $("#adm-pw").value });
